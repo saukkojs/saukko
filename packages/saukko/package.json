@@ -1,0 +1,9 @@
+{
+  "name": "saukko",
+  "version": "0.1.0",
+  "description": "Lightweight & Extensible Chatbot Framework",
+  "main": "lib/index.js",
+  "keywords": [],
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.11.1"
+}
