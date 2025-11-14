@@ -20,9 +20,19 @@ importers:
 
   packages/core: {}
 
-  packages/saukko: {}
+  packages/saukko:
+    dependencies:
+      '@cocotais/logger':
+        specifier: ^1.2.1
+        version: 1.2.1
+      smol-toml:
+        specifier: ^1.5.0
+        version: 1.5.0
 
 packages:
+
+  '@cocotais/logger@1.2.1':
+    resolution: {integrity: sha512-PWAqGj7e1CIE8/xLIbY1Y298hiHQn/vurzpJ70AfRtB3fucnDhKJAvjMjJUqamhpVUqjQZfaIQFNjt1jn9YaxQ==}
 
   '@esbuild/aix-ppc64@0.27.0':
     resolution: {integrity: sha512-KuZrd2hRjz01y5JK9mEBSD3Vj3mbCvemhT466rSuJYeE/hjuBrHfjjcjMdTm/sz7au+++sdbJZJmuBwQLuw68A==}
@@ -188,6 +198,14 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  kleur@4.1.5:
+    resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
+    engines: {node: '>=6'}
+
+  smol-toml@1.5.0:
+    resolution: {integrity: sha512-Jjsa8LZ+DyLbZ7gVi9d18bS8oxq0PQrTlVDfvYXgh7gxLwbW9QWgvakHD+hBLUtr5NahfStd8LQLGSPchaEJ8Q==}
+    engines: {node: '>= 18'}
+
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -197,6 +215,10 @@ packages:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
 snapshots:
+
+  '@cocotais/logger@1.2.1':
+    dependencies:
+      kleur: 4.1.5
 
   '@esbuild/aix-ppc64@0.27.0':
     optional: true
@@ -308,6 +330,10 @@ snapshots:
       '@esbuild/win32-arm64': 0.27.0
       '@esbuild/win32-ia32': 0.27.0
       '@esbuild/win32-x64': 0.27.0
+
+  kleur@4.1.5: {}
+
+  smol-toml@1.5.0: {}
 
   typescript@5.9.3: {}
 
