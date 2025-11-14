@@ -3,8 +3,11 @@ import { version } from '../package.json';
 import toml from 'smol-toml';
 import fs from 'fs';
 import path from 'path';
+import { SaukkoEnv } from './types';
 
-const logger = new Logger("cli", "info", {
+const env = process.env as SaukkoEnv;
+
+const logger = new Logger("cli", env.SAUKKO_LOG_LEVEL, {
     hasDate: true
 });
 
