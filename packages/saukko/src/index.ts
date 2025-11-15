@@ -1,9 +1,10 @@
 import { Logger } from '@cocotais/logger';
+import { SaukkoEnv } from './types';
 import { version } from '../package.json';
 import toml from 'smol-toml';
 import fs from 'fs';
 import path from 'path';
-import { SaukkoEnv } from './types';
+import net from 'net';
 
 const env = process.env as SaukkoEnv;
 
@@ -25,8 +26,13 @@ const config = toml.parse(fs.readFileSync(path.join(process.cwd(), 'saukko.toml'
 const args = process.argv.slice(2);
 
 if (args.length === 0) {
+    if (fs.existsSync(path.join(process.cwd(), '.saukko.sock'))) {
+        logger.error('已存在 .saukko.sock 文件，框架可能已启动。');
+        logger.notice('如果你确认框架未启动，请删除 .saukko.sock 文件后重试。');
+        process.exit(1);
+    }
     logger.info('启动 saukko 中...');
-    // WIP
+    
 }
 else {
     // WIP
