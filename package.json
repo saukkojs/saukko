@@ -4,7 +4,6 @@
   "scripts": {
     "build": "node scripts/build.mjs"
   },
-  "author": "",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.11.1",
   "devDependencies": {
