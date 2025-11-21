@@ -7,7 +7,7 @@ declare module '../container' {
 export class LoggerService {
     constructor() {}
 
-    l(name: string, ...messages: any[]) {
+    log(level: 'trace' | 'debug' | 'info' | 'notice' | 'warn' | 'error', name: string, ...messages: any[]) {
         // WIP
     }
 }
