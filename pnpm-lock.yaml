@@ -21,7 +21,11 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      '@cocotais/logger':
+        specifier: ^1.2.1
+        version: 1.2.1
 
   packages/saukko:
     dependencies:

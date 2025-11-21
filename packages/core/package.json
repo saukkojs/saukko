@@ -5,5 +5,8 @@
   "main": "lib/index.js",
   "keywords": [],
   "license": "Apache-2.0",
-  "packageManager": "pnpm@10.11.1"
+  "packageManager": "pnpm@10.11.1",
+  "dependencies": {
+    "@cocotais/logger": "^1.2.1"
+  }
 }
