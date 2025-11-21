@@ -1,10 +1,10 @@
-declare module '@saukkojs/core' {
+declare module '../container' {
     interface ServiceRegistry {
         logger: LoggerService;
     }
 }
 
-class LoggerService {
+export class LoggerService {
     constructor() {}
 
     l(name: string, ...messages: any[]) {
