@@ -8,8 +8,9 @@ import net from 'net';
 
 const env = process.env as SaukkoEnv;
 
-const logger = new Logger("cli", env.SAUKKO_LOG_LEVEL, {
-    hasDate: true
+const logger = new Logger("cli", {
+    hasDate: true,
+    loglevel: env.SAUKKO_LOG_LEVEL
 });
 
 logger.info(`saukko v${version} by Cocotais Team`);
