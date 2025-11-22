@@ -6,10 +6,10 @@ export class App {
     constructor(private logger: LoggerService) {}
 
     async start() {
-        this.logger.log('info', 'app', 'Starting app...');
+        this.logger.log('app', 'info', 'Starting app...');
     }
 
     async stop() {
-        this.logger.log('info', 'app', 'Stopping app...');
+        this.logger.log('app', 'info', 'Stopping app...');
     }
 }
