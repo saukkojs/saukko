@@ -1,11 +1,6 @@
 import log from '@cocotais/logger';
 
 const env = process.env;
-declare module '../container' {
-    interface ServiceRegistry {
-        logger: LoggerService;
-    }
-}
 
 export class LoggerService {
     constructor() {}

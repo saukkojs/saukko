@@ -1,9 +1,13 @@
+import { LoggerService } from "./services/logger";
+
 type Constructor<T = any> = {
     new(...args: any[]): T;
     inject?: readonly (keyof ServiceRegistry)[];
 };
 
-export interface ServiceRegistry {}
+export interface ServiceRegistry {
+    logger: LoggerService;
+}
 
 export class Container {
     private factories = new Map<string, () => any>();
