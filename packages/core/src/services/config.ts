@@ -1,0 +1,67 @@
+import { Logger } from '@cocotais/logger';
+import { type Config } from '../types';
+
+type KeyFinder<T, Prev extends string = ''> = {
+    [K in keyof T & (string)]: T[K] extends object
+        ? T[K] extends Array<any> | Function
+            ? `${Prev}${K}`
+            : `${Prev}${K}` | KeyFinder<T[K], `${Prev}${K}.`>
+        : `${Prev}${K}`
+}[keyof T & string];
+
+type TypeFinder<T extends string, C> = T extends `${infer First}.${infer Rest}`
+    ? First extends keyof C
+        ? TypeFinder<Rest, C[First]>
+        : never
+    : T extends keyof C
+        ? C[T]
+        : never;
+
+export class ConfigService {
+    static inject = ['logger'];
+
+    private config: Config | undefined;
+    constructor(private logger: Logger) {}
+
+    getConfig() {
+        if (!this.config) {
+            this.logger.error('Trying to call getConfig() before config is set.');
+            return undefined;
+        }
+        return this.config;
+    }
+
+    setConfig(config: Config) {
+        if (this.config) {
+            this.logger.warn('Calling setConfig() will override the current config.');
+        }
+        this.config = config;
+    }
+
+    set(config: Partial<Config>) {
+        if (!this.config) {
+            this.logger.error('Trying to call set() before config is set.');
+            return;
+        }
+        this.config = { ...this.config, ...config };
+    }
+
+    get<T extends KeyFinder<Config>>(item: T){
+        const tree = item.split('.')
+
+        if (!this.config) {
+            this.logger.error('Trying to call get() before config is set.');
+            return;
+        }
+
+        let config: any = this.config
+        for (const key in tree) {
+            if (!(key in config)) {
+                this.logger.error(`Unknown config item: ${key} (in ${item})`)
+                return undefined;
+            }
+            config = config[key]
+        }
+        return config as TypeFinder<T, Config>
+    }
+}
