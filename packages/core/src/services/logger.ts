@@ -1,17 +1,17 @@
 import log from '@cocotais/logger';
-import { LogLevel, LogLevelExtended } from '../types';
-
-const env = process.env;
+import { LogLevel } from '../types';
+import { ConfigService } from './config';
 
 export class LoggerService {
-    constructor() {}
+    static inject = ['config'];
+    constructor(private config: ConfigService) {}
 
     log(name: string, level: LogLevel, ...messages: any[]) {
         log(name, level, {
             hasDate: true,
             toConsole: true,
-            toFile: 'logs/saukko.log',
-            loglevel: env.SAUKKO_LOG_LEVEL as LogLevelExtended
+            toFile: this.config.get('log.logdir'),
+            loglevel: this.config.get('log.loglevel')
         }, ...messages);
     }
 }
