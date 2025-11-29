@@ -2,16 +2,20 @@ import { Logger } from '@cocotais/logger';
 import { type Config } from '../types';
 
 type KeyFinder<T, Prev extends string = ''> = {
-    [K in keyof T & (string)]: T[K] extends object
-        ? T[K] extends Array<any> | Function
+    [K in keyof T & string]: NonNullable<T[K]> extends object
+        ? NonNullable<T[K]> extends Array<any> | Function
             ? `${Prev}${K}`
-            : `${Prev}${K}` | KeyFinder<T[K], `${Prev}${K}.`>
+            : `${Prev}${K}` | KeyFinder<NonNullable<T[K]>, `${Prev}${K}.`>
         : `${Prev}${K}`
 }[keyof T & string];
 
 type TypeFinder<T extends string, C> = T extends `${infer First}.${infer Rest}`
     ? First extends keyof C
-        ? TypeFinder<Rest, C[First]>
+        ? C[First] extends infer V
+            ? undefined extends V
+                ? TypeFinder<Rest, NonNullable<V>> | undefined
+                : TypeFinder<Rest, V>
+            : never
         : never
     : T extends keyof C
         ? C[T]
