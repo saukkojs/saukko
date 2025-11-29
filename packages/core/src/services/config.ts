@@ -59,7 +59,7 @@ export class ConfigService {
         }
 
         let config: any = this.config
-        for (const key in tree) {
+        for (const key of tree) {
             if (!(key in config)) {
                 this.logger.error(`Unknown config item: ${key} (in ${item})`)
                 return undefined;
