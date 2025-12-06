@@ -8,10 +8,6 @@ export type Config = {
     project: {
         name: string;
     };
-    log?: {
-        loglevel?: LogLevelExtended;
-        logdir?: string;
-    };
     plugin: {
         scopes?: string[];
         directories?: string[];
