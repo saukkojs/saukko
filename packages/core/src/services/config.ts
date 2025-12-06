@@ -22,7 +22,7 @@ type TypeFinder<T extends string, C> = T extends `${infer First}.${infer Rest}`
         : never;
 
 export class ConfigService {
-    static inject = ['logger'];
+    static inject = ['logger'] as const;
 
     private config: Config | undefined;
     constructor(private logger: Logger) {}
