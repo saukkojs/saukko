@@ -11,6 +11,7 @@ export interface ServiceRegistry {
     logger: LoggerService;
     config: ConfigService;
     app: App;
+    container: Container;
 }
 
 export class Container {

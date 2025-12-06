@@ -5,6 +5,7 @@ import { LoggerService } from "./services/logger";
 import { Config } from "./types";
 
 export function injectionProvider(container: Container, config: Config) {
+    container.register('container', () => container)
     container.register('logger', LoggerService)
     container.register('config', ConfigService)
 
