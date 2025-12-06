@@ -5,6 +5,7 @@ import toml from 'smol-toml';
 import fs from 'fs';
 import path from 'path';
 import net from 'net';
+import 'dotenv/config';
 
 const env = process.env as SaukkoEnv;
 
