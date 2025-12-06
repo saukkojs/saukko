@@ -2,6 +2,7 @@ import { App } from "./app";
 import { Container } from "./container";
 import { ConfigService } from "./services/config";
 import { LoggerService } from "./services/logger";
+import { PluginService } from "./services/plugin";
 import { Config } from "./types";
 
 export function injectionProvider(container: Container, config: Config) {
@@ -11,5 +12,6 @@ export function injectionProvider(container: Container, config: Config) {
 
     container.get('config').setConfig(config);
 
+    container.register('plugin', PluginService)
     container.register('app', App)
 }
