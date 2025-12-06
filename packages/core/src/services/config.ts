@@ -42,14 +42,6 @@ export class ConfigService {
         this.config = config;
     }
 
-    set(config: Partial<Config>) {
-        if (!this.config) {
-            this.logger.error('Trying to call set() before config is set.');
-            return;
-        }
-        this.config = { ...this.config, ...config };
-    }
-
     get<T extends KeyFinder<Config>>(item: T){
         const tree = item.split('.')
 
