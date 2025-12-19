@@ -61,4 +61,8 @@ export class Container {
             this.creating.delete(name);
         }
     }
+
+    has(name: string): boolean {
+        return this.factories.has(name);
+    }
 }
