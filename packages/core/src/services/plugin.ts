@@ -1,6 +1,8 @@
 import { Container, ServiceRegistry } from "../container";
 import { LoggerService } from "./logger";
 
+export interface PluginDepenciesRegistry {};
+
 interface PluginType {
     inject?: readonly (keyof ServiceRegistry)[];
     name: string;

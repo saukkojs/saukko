@@ -1,0 +1,1 @@
+export type { PluginDepenciesRegistry } from "./plugin";
