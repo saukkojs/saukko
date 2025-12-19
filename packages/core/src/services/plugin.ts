@@ -6,14 +6,13 @@ export interface PluginDepenciesRegistry {};
 interface PluginType {
     inject?: readonly (keyof ServiceRegistry)[];
     name: string;
-    apply(context: any): void;
-    dispose?(): void | Promise<void>;
+    default: (context: PluginContext) => void;
 }
 
 interface PluginMapItem {
     name: string;
     module: PluginType;
-    context: any;
+    context: PluginContext;
 }
 
 class PluginContext {
@@ -30,7 +29,7 @@ export class PluginService {
         private container: Container,
         private logger: LoggerService
     ) { }
-    
+
     apply(pluginModule: PluginType) {
         const dependencies = pluginModule.inject || [];
         const injections: Record<string, any> = {};
