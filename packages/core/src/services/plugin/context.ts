@@ -1,7 +1,6 @@
 import { PluginDependenciesRegistry, Events } from "./types";
 
 export class PluginContext {
-    public isEnabled: boolean = false;
     private eventListeners: Map<string, Function[]> = new Map();
 
     constructor(public readonly dependencies: PluginDependenciesRegistry) { }
