@@ -45,7 +45,7 @@ export class PluginService {
             module: pluginModule,
             context
         });
-        context.emit('internal.ready');
+        context.emit('internal.ready', {});
         this.logger.log('plugin', 'info', `+ ${pluginModule.name}`);
     }
 
@@ -55,7 +55,7 @@ export class PluginService {
             this.logger.log('plugin', 'error', `Cannot remove plugin ${name}: not found`);
             return;
         }
-        plugin.context.emit('internal.dispose');
+        plugin.context.emit('internal.dispose', {});
         this.plugins.delete(name);
         this.logger.log('plugin', 'info', `- ${name}`);
     }
