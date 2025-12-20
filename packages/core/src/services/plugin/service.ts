@@ -1,7 +1,6 @@
-import { Container, ServiceRegistry } from "../container";
-import { LoggerService } from "./logger";
-
-export interface PluginDepenciesRegistry {};
+import { Container, ServiceRegistry } from "../../container";
+import { LoggerService } from "../logger";
+import { PluginContext } from "./context";
 
 interface PluginType {
     inject?: readonly (keyof ServiceRegistry)[];
@@ -13,12 +12,6 @@ interface PluginMapItem {
     name: string;
     module: PluginType;
     context: PluginContext;
-}
-
-class PluginContext {
-    public isEnabled: boolean = false;
-
-    constructor(public readonly depencies: PluginDepenciesRegistry) { }
 }
 
 export class PluginService {
