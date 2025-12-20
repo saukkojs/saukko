@@ -1,4 +1,5 @@
 import { Container, ServiceRegistry } from "../../container";
+import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { PluginContext } from "./context";
 
@@ -12,15 +13,17 @@ interface PluginMapItem {
     name: string;
     module: PluginType;
     context: PluginContext;
+    config: Record<string, any>;
 }
 
 export class PluginService {
-    static inject = ['container', 'logger'] as const;
+    static inject = ['container', 'logger', 'config'] as const;
     private plugins = new Map<string, PluginMapItem>();
 
     constructor(
         private container: Container,
-        private logger: LoggerService
+        private logger: LoggerService,
+        private config: ConfigService
     ) { }
 
     apply(pluginModule: PluginType) {
@@ -38,12 +41,15 @@ export class PluginService {
             this.logger.log('plugin', 'error', `Cannot apply plugin ${pluginModule.name}: Dependency ${missingDeps.join(', ')} not found`);
             return;
         }
-        const context = new PluginContext(injections);
+        const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
+        const currentConfig = pluginConfig[pluginModule.name] || {};
+        const context = new PluginContext(injections, currentConfig);
         pluginModule.default(context);
         this.plugins.set(pluginModule.name, {
             name: pluginModule.name,
             module: pluginModule,
-            context
+            context,
+            config: currentConfig
         });
         context.emit('internal.ready', {});
         this.logger.log('plugin', 'info', `+ ${pluginModule.name}`);

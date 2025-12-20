@@ -12,7 +12,7 @@ export type Config = {
         scopes?: string[];
         directories?: string[];
         files?: string[];
-        config?: {
+        config: {
             [key in keyof PluginConfigRegistry]?: PluginConfigRegistry[key];
         };
     };
@@ -20,7 +20,7 @@ export type Config = {
         scopes?: string[];
         directories?: string[];
         files?: string[];
-        config?: {
+        config: {
             [key in keyof ServiceConfigRegistry]?: ServiceConfigRegistry[key];
         };
     }

@@ -3,7 +3,7 @@ import { PluginDependenciesRegistry, Events } from "./types";
 export class PluginContext {
     private eventListeners: Map<string, Function[]> = new Map();
 
-    constructor(public readonly dependencies: PluginDependenciesRegistry) { }
+    constructor(public readonly dependencies: PluginDependenciesRegistry, public readonly config: Map<string, any>) { }
 
     private disposeGenerator(event: string, listener: Function) {
         return () => {
