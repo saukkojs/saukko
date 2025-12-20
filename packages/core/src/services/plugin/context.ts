@@ -1,10 +1,10 @@
-import { PluginDepenciesRegistry, Events } from "./types";
+import { PluginDependenciesRegistry, Events } from "./types";
 
 export class PluginContext {
     public isEnabled: boolean = false;
     private eventListeners: Map<string, Function[]> = new Map();
 
-    constructor(public readonly depencies: PluginDepenciesRegistry) { }
+    constructor(public readonly dependencies: PluginDependenciesRegistry) { }
 
     private disposeGenerator(event: string, listener: Function) {
         return () => {

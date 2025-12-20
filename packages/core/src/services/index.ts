@@ -1,1 +1,1 @@
-export type { PluginDepenciesRegistry } from "./plugin";
+export type { PluginDependenciesRegistry } from "./plugin";

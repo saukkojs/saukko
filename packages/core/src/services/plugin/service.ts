@@ -35,7 +35,7 @@ export class PluginService {
             injections[dep] = this.container.get(dep);
         }
         if (missingDeps.length > 0) {
-            this.logger.log('plugin', 'error', `Cannot apply plugin ${pluginModule.name}: depency ${missingDeps.join(', ')} not found`);
+            this.logger.log('plugin', 'error', `Cannot apply plugin ${pluginModule.name}: Dependency ${missingDeps.join(', ')} not found`);
             return;
         }
         const context = new PluginContext(injections);

@@ -1,2 +1,2 @@
 export { PluginService } from './service';
-export { type PluginDepenciesRegistry } from './types';
+export { type PluginDependenciesRegistry } from './types';
