@@ -39,11 +39,25 @@ export class PluginService {
             return;
         }
         const context = new PluginContext(injections);
-        // WIP
+        pluginModule.default(context);
+        this.plugins.set(pluginModule.name, {
+            name: pluginModule.name,
+            module: pluginModule,
+            context
+        });
+        context.emit('internal.ready');
+        this.logger.log('plugin', 'info', `+ ${pluginModule.name}`);
     }
 
     remove(name: string) {
-        // WIP
+        const plugin = this.plugins.get(name);
+        if (!plugin) {
+            this.logger.log('plugin', 'error', `Cannot remove plugin ${name}: not found`);
+            return;
+        }
+        plugin.context.emit('internal.dispose');
+        this.plugins.delete(name);
+        this.logger.log('plugin', 'info', `- ${name}`);
     }
 
     list() {
