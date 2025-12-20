@@ -26,15 +26,6 @@ export class PluginContext {
         return this.disposeGenerator(event, listener);
     }
 
-    once<T extends keyof Events>(event: T, listener: (event: Events[T]) => void) {
-        const onceListener = (args: Events[T]) => {
-            listener(args);
-            this.off(event, onceListener);
-        }
-        this.on(event, onceListener);
-        return this.disposeGenerator(event, onceListener);
-    }
-
     off<T extends keyof Events>(event: T, listener: (event: Events[T]) => void) {
         const listeners = this.eventListeners.get(event);
         if (!listeners) return;
