@@ -3,10 +3,12 @@ import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { PluginContext } from "./context";
 
+type AsyncAble<T> = T | Promise<T>;
+
 export interface PluginType {
     inject?: readonly (keyof ServiceRegistry)[];
     name: string;
-    default: (context: PluginContext) => void;
+    default: (context: PluginContext) => AsyncAble<void>;
 }
 
 export interface PluginMapItem {
@@ -54,7 +56,7 @@ export class PluginService {
         this.logger.log('plugin', 'info', `+ ${pluginModule.name}`);
     }
 
-    apply(name: string) {
+    async apply(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
             this.logger.log('plugin', 'error', `Cannot apply plugin ${name}: not found`);
@@ -81,7 +83,7 @@ export class PluginService {
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
         const currentConfig = pluginConfig[name] || {};
         const context = new PluginContext(injections, currentConfig);
-        plugin.module.default(context);
+        await plugin.module.default(context);
         this.plugins.set(name, {
             ...plugin,
             context,
@@ -103,6 +105,10 @@ export class PluginService {
             return;
         }
         plugin.context!.emit('internal.dispose', {});
+        this.plugins.set(name, {
+            ...plugin,
+            enabled: false
+        });
         this.logger.log('plugin', 'info', `D ${name}`);
     }
 
