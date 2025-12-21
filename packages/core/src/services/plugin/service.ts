@@ -117,6 +117,18 @@ export class PluginService {
     }
 
     list() {
-        return Array.from(this.plugins.keys());
+        let list: {
+            name: string;
+            enabled: boolean;
+            inject?: readonly (keyof ServiceRegistry)[];
+        }[] = [];
+        this.plugins.forEach((plugin) => {
+            list.push({
+                name: plugin.name,
+                enabled: plugin.enabled,
+                inject: plugin.module.inject
+            })
+        })
+        return list;
     }
 }
