@@ -3,6 +3,7 @@ import { Logger } from '@cocotais/logger';
 import fs from 'fs';
 import path from 'path';
 import child_process from 'child_process';
+import { glob } from 'glob';
 
 const logger = new Logger('build', process.env.SAUKKO_LOG_LEVEL || 'trace')
 
@@ -10,9 +11,14 @@ async function buildPackage(pkg) {
     logger.info(`Building package ${pkg}...`);
     logger.debug(`package path: ${path.join('packages', pkg)}`)
 
+    // 获取所有 TypeScript 文件
+    const entryPoints = await glob(path.join('packages', pkg, 'src', '**', '*.ts').replace(/\\/g, '/'));
+    logger.debug(`Found ${entryPoints.length} entry points:`, entryPoints);
+
     const buildResult = await build({
-        entryPoints: [path.join('packages', pkg, 'src', 'index.ts')],
+        entryPoints,
         outdir: path.join('packages', pkg, 'lib'),
+        outbase: path.join('packages', pkg, 'src'),
         bundle: false,
         minify: true,
         target: 'node20',
