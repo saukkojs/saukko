@@ -92,7 +92,10 @@ export class PluginService {
             config: currentConfig,
             enabled: true
         });
-        context.emit('internal.ready', {});
+        context.emit('internal.ready', {
+            name: 'internal.ready',
+            data: {}
+        });
         this.logger.log('plugin', 'info', `A ${name}`);
     }
 
@@ -106,7 +109,10 @@ export class PluginService {
             this.logger.log('plugin', 'error', `Plugin ${name} is not enabled, dispose skipped`);
             return;
         }
-        plugin.context!.emit('internal.dispose', {});
+        plugin.context!.emit('internal.dispose', {
+            name: 'internal.dispose',
+            data: {}
+        });
         this.plugins.set(name, {
             ...plugin,
             enabled: false

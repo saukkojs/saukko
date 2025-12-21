@@ -1,4 +1,5 @@
 import { Bot } from "./bot";
+import { PluginDependenciesRegistry, Events, Event } from "./types";
 
 export class PluginContext {
     private eventListeners: Map<string, Function[]> = new Map();
@@ -20,7 +21,7 @@ export class PluginContext {
         }
     }
 
-    on<T extends keyof Events>(event: T, listener: (event: Events[T]) => void) {
+    on<T extends keyof Events>(event: T, listener: (event: Event<T>) => void) {
         if (!this.eventListeners.has(event)) {
             this.eventListeners.set(event, []);
         }
@@ -29,7 +30,7 @@ export class PluginContext {
         return this.disposeGenerator(event, listener);
     }
 
-    off<T extends keyof Events>(event: T, listener: (event: Events[T]) => void) {
+    off<T extends keyof Events>(event: T, listener: (event: Event<T>) => void) {
         const listeners = this.eventListeners.get(event);
         if (!listeners) return;
         const index = listeners.indexOf(listener);
@@ -38,7 +39,7 @@ export class PluginContext {
         }
     }
 
-    emit<T extends keyof Events>(event: T, args: Events[T]) {
+    emit<T extends keyof Events>(event: T, args: Event<T>) {
         const listeners = this.eventListeners.get(event);
         if (!listeners) return;
         for (const listener of listeners) {
