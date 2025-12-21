@@ -3,13 +3,13 @@ import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { PluginContext } from "./context";
 
-interface PluginType {
+export interface PluginType {
     inject?: readonly (keyof ServiceRegistry)[];
     name: string;
     default: (context: PluginContext) => void;
 }
 
-interface PluginMapItem {
+export interface PluginMapItem {
     name: string;
     module: PluginType;
     context: PluginContext | undefined;
@@ -116,15 +116,13 @@ export class PluginService {
         this.logger.log('plugin', 'info', `- ${name}`);
     }
 
-    list() {
-        let list: {
-            name: string;
+    map() {
+        let list: Map<string, {
             enabled: boolean;
             inject?: readonly (keyof ServiceRegistry)[];
-        }[] = [];
+        }> = new Map();
         this.plugins.forEach((plugin) => {
-            list.push({
-                name: plugin.name,
+            list.set(plugin.name, {
                 enabled: plugin.enabled,
                 inject: plugin.module.inject
             })
