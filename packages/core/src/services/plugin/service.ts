@@ -1,6 +1,7 @@
 import { Container, ServiceRegistry } from "../../container";
 import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
+import { Bot } from "./bot";
 import { PluginContext } from "./context";
 
 type AsyncAble<T> = T | Promise<T>;
@@ -22,6 +23,7 @@ export interface PluginMapItem {
 export class PluginService {
     static inject = ['container', 'logger', 'config'] as const;
     private plugins = new Map<string, PluginMapItem>();
+    private bots: Array<Bot> = [];
 
     constructor(
         private container: Container,
@@ -82,7 +84,7 @@ export class PluginService {
         }
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
         const currentConfig = pluginConfig[name] || {};
-        const context = new PluginContext(injections, currentConfig);
+        const context = new PluginContext(injections, currentConfig, this.bots);
         await plugin.module.default(context);
         this.plugins.set(name, {
             ...plugin,
