@@ -1,1 +1,1 @@
-export type { PluginDependenciesRegistry } from "./plugin";
+export { PluginContext, Bot, type PluginDependenciesRegistry, type Events } from "./plugin";

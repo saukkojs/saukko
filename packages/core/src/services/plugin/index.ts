@@ -1,2 +1,4 @@
 export { PluginService, type PluginType, type PluginMapItem } from './service';
-export { type PluginDependenciesRegistry } from './types';
+export { PluginContext } from './context';
+export { type PluginDependenciesRegistry, type Events } from './types';
+export { Bot } from './bot';
