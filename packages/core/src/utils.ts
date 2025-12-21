@@ -5,12 +5,16 @@ import { LoggerService } from "./services/logger";
 import { PluginService } from "./services/plugin";
 import { Config } from "./types";
 
-export function injectionProvider(container: Container, config: Config) {
+export function injectionProvider(container: Container, config: Config, addition: {
+    headless?: boolean;
+}) {
     container.register('container', () => container)
     container.register('logger', LoggerService)
     container.register('config', ConfigService)
 
     container.get('config').setConfig(config);
+
+    if (addition.headless) return;
 
     container.register('plugin', PluginService)
     container.register('app', App)
