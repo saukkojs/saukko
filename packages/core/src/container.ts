@@ -65,4 +65,8 @@ export class Container {
     has(name: string): boolean {
         return this.factories.has(name);
     }
+
+    list(): string[] {
+        return Array.from(this.factories.keys());
+    }
 }
