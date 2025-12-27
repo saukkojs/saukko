@@ -13,8 +13,7 @@
         "allowSyntheticDefaultImports": true,
         "forceConsistentCasingInFileNames": true,
         "resolveJsonModule": true,
-        "isolatedModules": true,
-        "composite": true,
+        "isolatedModules": true
     },
     "exclude": [
         "node_modules",

@@ -5,25 +5,30 @@ import path from 'path';
 import child_process from 'child_process';
 import { glob } from 'glob';
 
-const logger = new Logger('build', process.env.SAUKKO_LOG_LEVEL || 'trace')
+const logger = new Logger('build', {
+    loglevel: 'trace'
+})
+
+const entryPointsMap = {
+    core: ['packages/core/src/index.ts'],
+    saukko: ['packages/saukko/src/index.ts', 'packages/saukko/src/daemon/index.ts'],
+}
 
 async function buildPackage(pkg) {
     logger.info(`Building package ${pkg}...`);
     logger.debug(`package path: ${path.join('packages', pkg)}`)
 
-    // 获取所有 TypeScript 文件
-    const entryPoints = await glob(path.join('packages', pkg, 'src', '**', '*.ts').replace(/\\/g, '/'));
-    logger.debug(`Found ${entryPoints.length} entry points:`, entryPoints);
+    let entryPoints = entryPointsMap[pkg];
 
     const buildResult = await build({
         entryPoints,
         outdir: path.join('packages', pkg, 'lib'),
-        outbase: path.join('packages', pkg, 'src'),
-        bundle: false,
+        bundle: true,
         minify: true,
         target: 'node20',
         format: 'esm',
         platform: 'node',
+        packages: 'external',
         tsconfig: path.join('packages', pkg, 'tsconfig.json'),
     })
 
