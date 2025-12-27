@@ -1,6 +1,5 @@
 import { Logger } from '@cocotais/logger';
 import { DaemonMessage, DaemonResponse, SaukkoEnv } from './types';
-import { version } from '../package.json';
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
@@ -92,7 +91,7 @@ function startDaemon() {
 async function main() {
     const args = process.argv.slice(2);
 
-    logger.info(`saukko v${version} by Cocotais Team`);
+    logger.info(`saukko by Cocotais Team`);
 
     if (args.length === 0 || args[0] === 'start') {
         startDaemon();
