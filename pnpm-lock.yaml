@@ -35,6 +35,9 @@ importers:
       '@cocotais/logger':
         specifier: ^1.3.0
         version: 1.3.0
+      '@saukkojs/core':
+        specifier: 'workspace:'
+        version: link:../core
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3

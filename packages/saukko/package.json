@@ -8,6 +8,7 @@
   "packageManager": "pnpm@10.11.1",
   "dependencies": {
     "@cocotais/logger": "^1.3.0",
+    "@saukkojs/core": "workspace:",
     "dotenv": "^17.2.3",
     "smol-toml": "^1.5.2"
   }
