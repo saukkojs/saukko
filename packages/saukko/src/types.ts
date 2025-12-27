@@ -4,4 +4,14 @@ type SaukkoEnv = {
     SAUKKO_SOCKET_PATH?: string;
 }
 
-export type { SaukkoEnv };
+type DaemonMessage = {
+    action: 'stop' | 'command';
+    args?: string[];
+};
+
+type DaemonResponse = {
+    ok: boolean;
+    message?: string;
+};
+
+export type { SaukkoEnv, DaemonMessage, DaemonResponse };
