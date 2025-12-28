@@ -1,7 +1,7 @@
 import { Logger } from '@cocotais/logger';
 import prompts from 'prompts';
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { spawnSync } from 'child_process';
 
 const logger = new Logger('version', {
     loglevel: 'trace'
@@ -26,8 +26,9 @@ const packages = fs.readdirSync('packages')
 logger.debug(`Found ${packages.length} packages: `, packages);
 
 for (const pkg of packages) {
-    spawn('pnpm', ['publish', '--access', 'public'], {
+    spawnSync('pnpm', ['publish', '--access', 'public'], {
         cwd: `packages/${pkg}`,
         stdio: 'inherit',
+        shell: true
     });
 }
