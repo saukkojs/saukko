@@ -5,6 +5,7 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { SaukkoEnv, DaemonMessage, DaemonResponse } from '../types';
+import { getPluginPackages, getServicePackages } from './loader';
 
 const env = process.env as SaukkoEnv;
 const configPath = env.SAUKKO_CONFIG_PATH || path.join(process.cwd(), 'saukko.toml');
@@ -46,6 +47,20 @@ async function main() {
 	injectionProvider(container, config, { headless: false });
 
 	const app = container.get('app');
+	const plugin = container.get('plugin');
+
+	const servicesToLoad = await getServicePackages(config, logger);
+	for (const serviceModule of servicesToLoad) {
+		container.register(serviceModule.name, serviceModule.default);
+	}
+	logger.info('已装载 ', servicesToLoad.length, ' 个服务');
+
+	const pluginsToLoad = await getPluginPackages(config, logger);
+	for (const pluginModule of pluginsToLoad) {
+		plugin.install(pluginModule);
+	}
+	logger.info('已装载 ', pluginsToLoad.length, ' 个插件');
+
 	await app.start();
 
 	const server = net.createServer((socket) => {
