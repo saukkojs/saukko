@@ -5,7 +5,7 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { SaukkoEnv, DaemonMessage, DaemonResponse } from '../types';
-import { getPluginPackages, getServicePackages, isPluginPackage } from './loader';
+import { getPluginPackages, getServicePackages, isPluginPackage, resolveModule } from './loader';
 
 const env = process.env as SaukkoEnv;
 const configPath = env.SAUKKO_CONFIG_PATH || path.join(process.cwd(), 'saukko.toml');
@@ -45,6 +45,7 @@ async function main() {
 	const config = loadConfig() as Config;
 
 	logger.debug('配置加载', config);
+	logger.debug('import.meta', import.meta);
 
 	const container = new Container();
 	injectionProvider(container, config, { headless: false });
@@ -148,8 +149,8 @@ async function handleMessage(message: DaemonMessage, socket: net.Socket, app: Ap
 					if (!rest[1]) {
 						throw new Error('缺少插件目录');
 					}
-					const plugin = await import(path.resolve(rest[1]));
-					if (isPluginPackage(plugin) === false) {
+					const plugin = await import(resolveModule(rest[1]));
+					if (!isPluginPackage(plugin)) {
 						throw new Error('无效的插件');
 					}
 					
