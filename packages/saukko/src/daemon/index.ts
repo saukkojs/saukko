@@ -43,6 +43,9 @@ async function main() {
 	cleanupSocket();
 
 	const config = loadConfig() as Config;
+
+	logger.debug('配置加载', config);
+
 	const container = new Container();
 	injectionProvider(container, config, { headless: false });
 
