@@ -2,7 +2,8 @@
   "name": "@saukkojs/root",
   "private": true,
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "bump": "node scripts/version.mjs"
   },
   "workspaces": [
     "packages/*"
@@ -14,6 +15,7 @@
     "@types/node": "^24.10.1",
     "esbuild": "^0.27.0",
     "glob": "^13.0.0",
+    "prompts": "^2.4.2",
     "typescript": "^5.9.3"
   }
 }
