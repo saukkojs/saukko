@@ -10,7 +10,6 @@ export type Config = {
     };
     plugin: {
         scopes?: string[];
-        directories?: string[];
         files?: string[];
         config: {
             [key in keyof PluginConfigRegistry]?: PluginConfigRegistry[key];
@@ -18,7 +17,6 @@ export type Config = {
     };
     service: {
         scopes?: string[];
-        directories?: string[];
         files?: string[];
         config: {
             [key in keyof ServiceConfigRegistry]?: ServiceConfigRegistry[key];

@@ -3,7 +3,7 @@ import { ConfigService } from "./services/config";
 import { App } from "./app";
 import { PluginService } from "./services/plugin";
 
-type Constructor<T = any> = {
+export type Constructor<T = any> = {
     new(...args: any[]): T;
     inject?: readonly (keyof ServiceRegistry)[];
 };
