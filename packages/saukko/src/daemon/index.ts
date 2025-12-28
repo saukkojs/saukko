@@ -5,7 +5,7 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { SaukkoEnv, DaemonMessage, DaemonResponse } from '../types';
-import { getPluginPackages, getServicePackages } from './loader';
+import { getPluginPackages, getServicePackages, isPluginPackage } from './loader';
 
 const env = process.env as SaukkoEnv;
 const configPath = env.SAUKKO_CONFIG_PATH || path.join(process.cwd(), 'saukko.toml');
@@ -75,7 +75,7 @@ async function main() {
 				if (!raw) continue;
 				try {
 					const message = JSON.parse(raw) as DaemonMessage;
-					void handleMessage(message, socket, app, server);
+					void handleMessage(message, socket, app, server, container);
 				} catch (error) {
 					const response: DaemonResponse = { ok: false, message: 'Invalid message format' };
 					socket.write(JSON.stringify(response) + '\n');
@@ -113,7 +113,7 @@ async function main() {
 	process.on('SIGTERM', stop);
 }
 
-async function handleMessage(message: DaemonMessage, socket: net.Socket, app: App, server: net.Server) {
+async function handleMessage(message: DaemonMessage, socket: net.Socket, app: App, server: net.Server, container: Container) {
 	if (message.action === 'stop') {
 		const response: DaemonResponse = { ok: true, message: 'Daemon stopping' };
 		socket.write(JSON.stringify(response) + '\n');
@@ -129,27 +129,84 @@ async function handleMessage(message: DaemonMessage, socket: net.Socket, app: Ap
 	}
 
 	if (message.action === 'command') {
+		logger.info('IPC 收到命令请求', message.args);
 		const [command, ...rest] = message.args || [];
 		if (!command) {
-			const response: DaemonResponse = { ok: true, message: 'No command provided' };
+			logger.warn('IPC 收到空命令');
+			const response: DaemonResponse = { ok: true, message: '命令无效：命令为空' };
 			socket.write(JSON.stringify(response) + '\n');
 			return;
 		}
 
 		try {
-			const commandText = [command, ...rest].join(' ');
-			logger.notice(`Received command from cli: ${commandText}`);
-			const response: DaemonResponse = { ok: true, message: 'Command dispatched' };
+			if (command === 'plugin') {
+				const pluginService = container.get('plugin');
+				if (rest[0] === 'install') {
+					if (!rest[1]) {
+						throw new Error('缺少插件目录');
+					}
+					const plugin = await import(path.resolve(rest[1]));
+					if (isPluginPackage(plugin) === false) {
+						throw new Error('无效的插件');
+					}
+					
+					pluginService.install(plugin);
+					logger.info(`已通过 IPC 安装插件 ${plugin.name}`);
+					const response: DaemonResponse = { ok: true, message: `已安装插件 ${plugin.name}` };
+					socket.write(JSON.stringify(response) + '\n');
+					return;
+				}
+				if (rest[0] === 'enable') {
+					if (pluginService.map().has(rest[1]) === false) {
+						throw new Error(`未找到插件 ${rest[1]}，可能未安装`);
+					}
+					await pluginService.apply(rest[1]);
+					logger.info(`已通过 IPC 启用插件 ${rest[1]}`);
+					const response: DaemonResponse = { ok: true, message: `已启用插件 ${rest[1]}` };
+					socket.write(JSON.stringify(response) + '\n');
+					return;
+				}
+				if (rest[0] === 'list') {
+					const pluginList = Array.from(pluginService.map().keys());
+					logger.info('已通过 IPC 列出插件列表', pluginList);
+					const response: DaemonResponse = { ok: true, message: `已安装插件列表: ${pluginList.join(', ')}` };
+					socket.write(JSON.stringify(response) + '\n');
+					return;
+				}
+				if (rest[0] === 'disable') {
+					if (pluginService.map().has(rest[1]) === false) {
+						throw new Error(`未找到插件 ${rest[1]}，可能未安装`);
+					}
+					pluginService.dispose(rest[1]);
+					logger.info(`已通过 IPC 禁用插件 ${rest[1]}`);
+					const response: DaemonResponse = { ok: true, message: `已禁用插件 ${rest[1]}` };
+					socket.write(JSON.stringify(response) + '\n');
+					return;
+				}
+				if (rest[0] === 'uninstall') {
+					if (pluginService.map().has(rest[1]) === false) {
+						throw new Error(`未找到插件 ${rest[1]}，可能未安装`);
+					}
+					pluginService.remove(rest[1]);
+					logger.info(`已通过 IPC 卸载插件 ${rest[1]}`);
+					const response: DaemonResponse = { ok: true, message: `已卸载插件 ${rest[1]}` };
+					socket.write(JSON.stringify(response) + '\n');
+					return;
+				}
+				throw new Error(`未知的命令 ${rest[0]}。可用的命令有：install, uninstall, enable, disable, list`);
+			}
+			const response: DaemonResponse = { ok: false, message: `未知的命令 ${command}。可用的命令有：plugin` };
 			socket.write(JSON.stringify(response) + '\n');
 			return;
 		} catch (error) {
-			logger.error('Failed to handle command', error);
-			const response: DaemonResponse = { ok: false, message: 'Command failed' };
+			logger.error('IPC 处理命令失败', error);
+			const response: DaemonResponse = { ok: false, message: error instanceof Error ? error.message : 'Unknown error' };
 			socket.write(JSON.stringify(response) + '\n');
 			return;
 		}
 	}
 
+	logger.warn('IPC 收到未知的操作请求：', message.action);
 	const response: DaemonResponse = { ok: false, message: 'Unknown action' };
 	socket.write(JSON.stringify(response) + '\n');
 }
