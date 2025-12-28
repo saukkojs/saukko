@@ -2,8 +2,9 @@
   "name": "@saukkojs/root",
   "private": true,
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "bump": "node scripts/version.mjs"
+    "dev:build": "node scripts/build.mjs",
+    "dev:version": "node scripts/version.mjs",
+    "dev:publish": "node scripts/publish.mjs"
   },
   "workspaces": [
     "packages/*"
