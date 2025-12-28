@@ -24,6 +24,7 @@ export class PluginService {
     static inject = ['container', 'logger', 'config'] as const;
     private plugins = new Map<string, PluginMapItem>();
     private bots: Array<Bot> = [];
+    private sharedEventListeners = new Map<string, Function[]>();
 
     constructor(
         private container: Container,
@@ -84,7 +85,7 @@ export class PluginService {
         }
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
         const currentConfig = pluginConfig[name] || {};
-        const context = new PluginContext(injections, currentConfig, this.bots);
+        const context = new PluginContext(injections, currentConfig, this.bots, this.sharedEventListeners);
         await plugin.module.default(context);
         this.plugins.set(name, {
             ...plugin,
