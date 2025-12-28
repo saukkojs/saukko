@@ -79,7 +79,7 @@ async function main() {
 	});
 
 	server.listen(ipcPath, () => {
-		logger.notice(`IPC 通信开始监听于： ${ipcPath}`);
+		logger.debug(`IPC 通信开始监听于： ${ipcPath}`);
 	});
 
 	const stop = async () => {
