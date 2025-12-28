@@ -4,7 +4,17 @@
   "description": "Core Library of Saukko",
   "main": "lib/index.js",
   "type": "module",
-  "keywords": [],
+  "keywords": [
+    "framework",
+    "chatbot",
+    "saukkojs",
+    "saukko"
+  ],
+  "files": [
+    "lib",
+    "package.json",
+    "README.md"
+  ],
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.11.1",
   "dependencies": {

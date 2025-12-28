@@ -4,10 +4,20 @@
   "description": "Lightweight & Extensible Chatbot Framework",
   "main": "lib/index.js",
   "type": "module",
+  "keywords": [
+    "cli",
+    "chatbot",
+    "saukkojs",
+    "saukko"
+  ],
+  "files": [
+    "lib",
+    "package.json",
+    "README.md"
+  ],
   "bin": {
     "saukko": "./lib/index.js"
   },
-  "keywords": [],
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.11.1",
   "dependencies": {
