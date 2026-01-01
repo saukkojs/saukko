@@ -114,6 +114,7 @@ export class PluginService {
             name: 'internal.dispose',
             data: {}
         });
+        plugin.context!.dispose();
         this.plugins.set(name, {
             ...plugin,
             enabled: false
