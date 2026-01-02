@@ -1,6 +1,6 @@
 {
   "name": "saukko",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lightweight & Extensible Chatbot Framework",
   "main": "lib/index.js",
   "type": "module",
