@@ -1,4 +1,4 @@
-import { Logger } from '@cocotais/logger';
+import { LoggerService } from './logger';
 import { type Config } from '../types';
 
 type KeyFinder<T, Prev extends string = ''> = {
@@ -25,11 +25,11 @@ export class ConfigService {
     static inject = ['logger'] as const;
 
     private config: Config | undefined;
-    constructor(private logger: Logger) {}
+    constructor(private logger: LoggerService) {}
 
     getConfig() {
         if (!this.config) {
-            this.logger.error('Trying to call getConfig() before config is set.');
+            this.logger.log('config', 'error', 'Trying to call getConfig() before config is set.');
             return undefined;
         }
         return this.config;
@@ -37,7 +37,7 @@ export class ConfigService {
 
     setConfig(config: Config) {
         if (this.config) {
-            this.logger.warn('Calling setConfig() will override the current config.');
+            this.logger.log('config', 'warn', 'Calling setConfig() will override the current config.');
         }
         this.config = config;
     }
@@ -46,14 +46,14 @@ export class ConfigService {
         const tree = item.split('.')
 
         if (!this.config) {
-            this.logger.error('Trying to call get() before config is set.');
+            this.logger.log('config', 'error', 'Trying to call get() before config is set.');
             return;
         }
 
         let config: any = this.config
         for (const key of tree) {
             if (!(key in config)) {
-                this.logger.error(`Unknown config item: ${key} (in ${item})`)
+                this.logger.log('config', 'error', `Unknown config item: ${key} (in ${item})`)
                 return undefined;
             }
             config = config[key]
