@@ -2,6 +2,7 @@ import { LoggerService } from "./services/logger";
 import { ConfigService } from "./services/config";
 import { App } from "./app";
 import { PluginService } from "./services/plugin";
+import { StorageService } from "./services/storage";
 
 export type Constructor<T = any> = {
     new(...args: any[]): T;
@@ -14,6 +15,7 @@ export interface ServiceRegistry {
     app: App;
     container: Container;
     plugin: PluginService;
+    storage: StorageService;
 }
 
 export class Container {

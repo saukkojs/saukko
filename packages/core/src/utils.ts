@@ -3,6 +3,7 @@ import { Container } from "./container";
 import { ConfigService } from "./services/config";
 import { LoggerService } from "./services/logger";
 import { PluginService } from "./services/plugin";
+import { StorageService } from "./services/storage";
 import { Config } from "./types";
 
 export function injectionProvider(container: Container, config: Config, addition: {
@@ -16,6 +17,7 @@ export function injectionProvider(container: Container, config: Config, addition
 
     if (addition.headless) return;
 
+    container.register('storage', StorageService)
     container.register('plugin', PluginService)
     container.register('app', App)
 }
