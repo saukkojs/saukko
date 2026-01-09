@@ -33,6 +33,6 @@ saukko plugin uninstall <plugin-name>       # 卸载插件
 
 [Apache 2.0](./LICENSE)
 
-Copyright © 2025 Cocotais Team
+Copyright © 2025-2026 Cocotais Team
 
 

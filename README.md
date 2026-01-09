@@ -20,6 +20,6 @@
 
 Saukko.js 系列项目均使用 [Apache 2.0](./LICENSE) 协议开源。
 
-Copyright © 2025 Cocotais Team
+Copyright © 2025-2026 Cocotais Team
 
 
