@@ -1,4 +1,11 @@
+import { PluginService } from "./plugin";
+
 export class Context {
+    plugin: PluginService;
+    constructor() {
+        this.plugin = new PluginService(this);
+        this.elevate("plugin", ["use"]);
+    }
     /**
      * 向 Context 提供一个属性
      * @param key 在 Context 上的属性名
