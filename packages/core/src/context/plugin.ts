@@ -68,7 +68,9 @@ export class PluginService {
         }
 
         if (this.plugins.has(plugin)) {
-            return;
+            return () => {
+                this.plugins.delete(plugin);
+            };
         }
 
         if (plugin.inject) {
