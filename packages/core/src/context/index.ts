@@ -1,4 +1,4 @@
 import { Context } from "./context";
-import { Lifecycle } from "./lifecycle";
+import { Lifecycle, LifecycleStatus } from "./lifecycle";
 
-export { Context, Lifecycle };
+export { Context, Lifecycle, LifecycleStatus };

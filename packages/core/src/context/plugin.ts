@@ -8,15 +8,15 @@ type PluginMeta = {
 
 type PluginFunctionLike = (
     context: Context,
-    config: Record<string, any> | undefined
+    config: Record<string, any>
 ) => void | Promise<void>;
 
 type PluginClassLike = {
-    new(context: Context, config: Record<string, any> | undefined): void;
+    new(context: Context, config: Record<string, any>): void;
 };
 
 type PluginObjectLike = {
-    apply(context: Context, config: Record<string, any> | undefined): void | Promise<void>;
+    apply(context: Context, config: Record<string, any>): void | Promise<void>;
 };
 
 export type Plugin = PluginMeta &
@@ -63,7 +63,7 @@ export class PluginService {
     /**
      * @use `ctx.use`
      */
-    async use(plugin: Plugin, config?: Record<string, any>) {
+    async use(plugin: Plugin, config: Record<string, any> = {}) {
         const apply = this.resolve(plugin);
         if (!apply) {
             throw new Error(
@@ -81,19 +81,9 @@ export class PluginService {
             };
         }
 
-        // 检查依赖
-        if (plugin.inject) {
-            const unmet = plugin.inject.filter(dep => !(dep in this.ctx))
-            if (unmet.length > 0) {
-                throw new Error(
-                    `插件依赖未满足：${unmet.join(', ')}`
-                );
-            }
-        }
-
-        // 创建生命周期管理器
-        const lifecycle = new Lifecycle(this.ctx, plugin);
-
+        // 创建生命周期并进行初始化
+        const lifecycle = new Lifecycle(this.ctx, plugin, apply, config);
+        
         const runtime: PluginRuntime = {
             name: plugin.name
                 ? plugin.name == "apply"
@@ -107,17 +97,11 @@ export class PluginService {
 
         this.plugins.set(plugin, runtime);
 
-        // 执行插件初始化
+        // 尝试启动插件（检查依赖并启动）
         try {
-            const result = apply(this.ctx, config);
-            if (result && typeof result.then === 'function') {
-                await result;
-            }
+            await lifecycle.load();
         } catch (error) {
-            // 初始化失败时清理
-            await lifecycle.dispose();
-            this.plugins.delete(plugin);
-            throw error;
+            console.warn(`插件启动失败:`, error);
         }
 
         // 返回卸载函数
