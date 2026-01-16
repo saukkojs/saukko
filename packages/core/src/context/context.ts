@@ -1,9 +1,15 @@
 import { ProviderService } from "./provider";
 
-export class Context {
+export interface Context {
     provider: ProviderService;
+}
 
+export class Context {
     constructor() {
-        this.provider = new ProviderService(this);
+        const self = new Proxy(this, ProviderService.handler);
+
+        self.provider = new ProviderService(self);
+
+        return self;
     }
 }
