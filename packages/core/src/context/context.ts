@@ -28,4 +28,12 @@ export class Context {
 
         return self;
     }
+
+    /**
+     * 返回一个继承了当前上下文的新上下文实例
+     * @param data 需要扩展或覆盖的属性
+     */
+    extend(data = {}) {
+        return Object.create(this, data);
+    }
 }
