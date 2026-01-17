@@ -26,6 +26,7 @@ type PluginRuntime = {
     name: string | undefined;
     config: Record<string, any> | undefined;
     lifecycle: Lifecycle;
+    ctx: Context;
 };
 
 declare module './context' {
@@ -41,7 +42,7 @@ declare module './context' {
         use(
             plugin: Plugin,
             config?: Record<string, any>
-        ): Promise<() => Promise<void>>;
+        ): Promise<() => void>;
     }
 }
 
@@ -77,6 +78,9 @@ export class PluginService {
         }
 
         const lifecycle = this.ctx.lifecycle.fork();
+        const context = this.ctx.extend({
+            lifecycle
+        });
         
         const runtime: PluginRuntime = {
             name: plugin.name
@@ -85,15 +89,16 @@ export class PluginService {
                     : plugin.name
                 : undefined,
             config,
-            lifecycle
+            lifecycle,
+            ctx: context
         };
 
         this.plugins.set(plugin, runtime);
 
-        await apply(this.ctx, config);
+        await apply(context, config);
 
         return lifecycle.collect(() => {
-            // TODO dispose event
+            lifecycle.dispose();
             this.plugins.delete(plugin);
         });
     }
