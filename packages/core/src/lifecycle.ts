@@ -1,7 +1,7 @@
 export class Lifecycle {
-    private disposals = new Set<Function>();
+    public disposals = new Set<Function>();
 
-    constructor(private parent?: Lifecycle) {}
+    constructor() {}
 
     collect(callback: () => any) {
         const dispose = () => {
@@ -9,7 +9,6 @@ export class Lifecycle {
             return callback()
         }
         this.disposals.add(dispose);
-        this.parent?.collect(dispose);
         return dispose;
     }
 
@@ -20,7 +19,7 @@ export class Lifecycle {
     }
 
     fork() {
-        const forked = new Lifecycle(this);
+        const forked = new Lifecycle();
         this.collect(() => {
             forked.dispose();
         });
