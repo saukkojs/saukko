@@ -117,10 +117,10 @@ export class ProviderService {
             // check if elevated property
             const resolution = target.provider.resolve(prop);
             if (resolution) {
-                const [key, _] = resolution;
-                if (key in target) {
-                    return true;
-                }
+                const [key, method] = resolution;
+                const service = target[symbols.provider.store].get(key);
+                if (!service) return false;
+                return method in service;
             }
             return false;
         }
