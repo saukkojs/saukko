@@ -34,13 +34,13 @@ export class EventsService {
     constructor(private ctx: Context) {}
 
     on(event: string, listener: Function) {
-        if (event === 'ready') {
+        if (event === 'internal.ready') {
             // full lifecycle management is not implemented yet
             // so we just call the listener immediately
             listener();
             return () => {};
         }
-        if (event === 'dispose') {
+        if (event === 'internal.dispose') {
             let func = () => listener();
             this.ctx.lifecycle.collect(func);
             return this.ctx.lifecycle.collect(() => {
