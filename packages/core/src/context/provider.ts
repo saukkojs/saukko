@@ -55,7 +55,12 @@ export class ProviderService {
                 if (key in ctx) {
                     // FIXME wrong type
                     //@ts-ignore
-                    return ctx[key][method];
+                    const value = ctx[key][method];
+
+                    if (typeof value === "function") {
+                        return value.bind(ctx[key]);
+                    }
+                    return value;
                 }
                 return undefined;
             }
