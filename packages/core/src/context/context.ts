@@ -1,3 +1,4 @@
+import { Lifecycle } from "../lifecycle";
 import symbols from "../symbols";
 import { PluginService } from "./plugin";
 import { ProviderService } from "./provider";
@@ -8,6 +9,7 @@ export interface Context {
 
     provider: ProviderService;
     plugin: PluginService;
+    lifecycle: Lifecycle;
 }
 
 export class Context {
@@ -19,6 +21,7 @@ export class Context {
 
         self.provider = new ProviderService(self);
         self.plugin = new PluginService(self);
+        self.lifecycle = new Lifecycle();
 
         return self;
     }

@@ -1,5 +1,4 @@
 import { Context } from "./context";
-import { Lifecycle } from "./lifecycle";
 
 type PluginMeta = {
     name?: string;
@@ -24,9 +23,8 @@ export type Plugin = PluginMeta &
 
 type PluginRuntime = {
     name: string | undefined;
-    apply: Function;
     config: Record<string, any> | undefined;
-    lifecycle: Lifecycle;
+    dispose: () => any;
 };
 
 declare module './context' {
@@ -72,17 +70,12 @@ export class PluginService {
             );
         }
 
-        // 如果插件已经注册，直接返回卸载函数
         if (this.plugins.has(plugin)) {
             const existing = this.plugins.get(plugin)!;
-            return async () => {
-                await existing.lifecycle.dispose();
-                this.plugins.delete(plugin);
-            };
+            return existing.dispose;
         }
 
-        // 创建生命周期并进行初始化
-        const lifecycle = new Lifecycle(this.ctx, plugin, apply, config);
+        const lifecycle = this.ctx.lifecycle.fork();
         
         const runtime: PluginRuntime = {
             name: plugin.name
@@ -90,27 +83,17 @@ export class PluginService {
                     ? undefined
                     : plugin.name
                 : undefined,
-            apply,
             config,
-            lifecycle
+            dispose: () => lifecycle.dispose(),
         };
 
         this.plugins.set(plugin, runtime);
 
-        // 尝试启动插件（检查依赖并启动）
-        try {
-            await lifecycle.load();
-        } catch (error) {
-            console.warn(`插件启动失败:`, error);
-        }
+        await apply(this.ctx, config);
 
-        // 返回卸载函数
-        return async () => {
-            const pluginData = this.plugins.get(plugin);
-            if (pluginData) {
-                await pluginData.lifecycle.dispose();
-                this.plugins.delete(plugin);
-            }
-        };
+        return lifecycle.collect(() => {
+            // TODO dispose event
+            this.plugins.delete(plugin);
+        });
     }
 }
