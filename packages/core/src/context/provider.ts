@@ -2,8 +2,47 @@ import symbols from "../symbols";
 import { isNullish } from "../utils";
 import { Context } from "./context";
 
+declare module './context' {
+    interface Context {
+        /**
+         * 在 Context 上声明一个服务
+         * @param key 服务的名称
+         * @param value 可选，提供服务的初始值
+         */
+        declare(key: string, value?: any): void;
+
+        /**
+         * 设置一个服务的值
+         * 
+         * 如果服务未被声明，则会先声明该服务
+         * 
+         * 已经被设置过的服务，不能被重复设置，除非先将值设为 `null` 或 `undefined` 来删除该服务
+         * @param key 服务的名称
+         * @param value 服务的值，如果为 `null` 或 `undefined`，则表示删除该服务
+         */
+        set(key: string, value: any): void;
+
+        /**
+         * 提升 Context 上某个服务或属性下的方法（或属性）到 Context
+         * @param key 服务或属性的名称
+         * @param methods 要提升的方法名，可以是字符串数组或键值对对象：如传入键值对对象，则键为提升后的名称，值为原名称
+         */
+        elevate(key: string, methods: string[] | Record<string, string>): void;
+
+        /**
+         * 解析一个被提升到 Context 的方法（或属性）
+         * @param method 要解析的方法名
+         * @return 返回一个包含服务（或属性）名称和原方法（或属性）名称的元组，若该方法未被提升，则返回 `undefined`
+         */
+        resolve(method: string): [string, string] | undefined;
+    }
+}
+
 export class ProviderService {
-    constructor(private ctx: Context) {}
+    constructor(private ctx: Context) {
+        this.elevate("provider", ["declare", "set", "elevate", "resolve"]);
+        this.elevate("plugin", ["use"]);
+    }
 
     declare(key: string, value?: any) {
         if (this.ctx[symbols.provider.store].has(key)) return;  // ignore if exists

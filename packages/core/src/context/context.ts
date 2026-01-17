@@ -1,4 +1,5 @@
 import symbols from "../symbols";
+import { PluginService } from "./plugin";
 import { ProviderService } from "./provider";
 
 export interface Context {
@@ -6,6 +7,7 @@ export interface Context {
     [symbols.provider.elevations]: Map<string, [string, string]>;
 
     provider: ProviderService;
+    plugin: PluginService;
 }
 
 export class Context {
@@ -16,6 +18,7 @@ export class Context {
         const self = new Proxy(this, ProviderService.handler);
 
         self.provider = new ProviderService(self);
+        self.plugin = new PluginService(self);
 
         return self;
     }
