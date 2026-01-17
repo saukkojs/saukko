@@ -1,26 +1,4 @@
-import { App } from "./app";
-import { Container } from "./container";
-import { ConfigService } from "./services/config";
-import { LoggerService } from "./services/logger";
 import { PluginService } from "./services/plugin";
-import { StorageService } from "./services/storage";
-import { Config } from "./types";
-
-export function injectionProvider(container: Container, config: Config, addition: {
-    headless?: boolean;
-}) {
-    container.register('container', () => container)
-    container.register('logger', LoggerService)
-    container.register('config', ConfigService)
-
-    container.get('config').setConfig(config);
-
-    if (addition.headless) return;
-
-    container.register('storage', StorageService)
-    container.register('plugin', PluginService)
-    container.register('app', App)
-}
 
 export interface PluginDependencyIssue {
     plugin: string;
@@ -37,11 +15,14 @@ export function isNullish(value: any): value is null | undefined | void {
     return value === null || value === undefined;
 }
 
-export function pluginDependencyDiagnose(service: PluginService, container: Container): PluginDiagnosisResult {
+/**
+ * @todo 开发中
+ */
+export function pluginDependencyDiagnose(service: PluginService): PluginDiagnosisResult {
     const plugins = service.map();
     const pluginNames = Array.from(plugins.keys());
 
-    const services = container.list();
+    const services: any[] = [];
     const issues: PluginDependencyIssue[] = [];
 
     // 第一步：移除依赖缺失的插件（级联移除）
