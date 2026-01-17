@@ -1,5 +1,3 @@
-import { PluginService } from "./services/plugin";
-
 export interface PluginDependencyIssue {
     plugin: string;
     type: 'missing-dependency' | 'circular-dependency';
@@ -18,8 +16,8 @@ export function isNullish(value: any): value is null | undefined | void {
 /**
  * @todo 开发中
  */
-export function pluginDependencyDiagnose(service: PluginService): PluginDiagnosisResult {
-    const plugins = service.map();
+export function pluginDependencyDiagnose(): PluginDiagnosisResult {
+    const plugins = new Map<string, any>();
     const pluginNames = Array.from(plugins.keys());
 
     const services: any[] = [];
