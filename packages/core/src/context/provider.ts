@@ -1,119 +1,121 @@
+import symbols from "../symbols";
+import { isNullish } from "../utils";
 import { Context } from "./context";
 
 export class ProviderService {
-    private services: Map<string, any> = new Map();
-    private elevations: Map<string, [string, string]> = new Map();
     constructor(private ctx: Context) {}
 
-    provide(key: string, value?: any) {
-        if (this.services.has(key)) {
-            throw new Error(`Service with key "${key}" is already provided.`);
-        }
-        this.services.set(key, value);
-    }
-
-    has(key: string) {
-        return this.services.has(key);
-    }
-
-    get(key: string) {
-        if (!this.services.has(key)) {
-            throw new Error(`Service with key "${key}" is not provided.`);
-        }
-        return this.services.get(key);
+    declare(key: string, value?: any) {
+        if (this.ctx[symbols.provider.store].has(key)) return;  // ignore if exists
+        this.ctx[symbols.provider.store].set(key, value);
     }
 
     set(key: string, value: any) {
-        if (!this.services.has(key)) {
-            throw new Error(`Service with key "${key}" is not provided.`);
+        this.declare(key);
+        const old = this.ctx[symbols.provider.store].get(key);
+        if (old === value) return;  // ignore if same
+        if (!isNullish(value) && !isNullish(old)) {
+            throw new Error(`service "${key}" is already set.`);
         }
-        this.services.set(key, value);
-    }
-
-    remove(key: string) {
-        if (!this.services.has(key)) {
-            throw new Error(`Service with key "${key}" is not provided.`);
-        }
-        this.services.delete(key);
+        this.ctx[symbols.provider.store].set(key, value);
     }
 
     elevate(key: string, methods: string[] | Record<string, string>) {
         if (Array.isArray(methods)) {
             methods = Object.fromEntries(methods.map(m => [m, m]));
         }
-        for (const [method, as] of Object.entries(methods)) {
-            this.elevations.set(as, [key, method]);
+        for (const [method, target] of Object.entries(methods)) {
+            if (this.ctx[symbols.provider.elevations].has(method)) {
+                // TODO warn
+            }
+            this.ctx[symbols.provider.elevations].set(method, [key, target]);
         }
     }
 
-    resolve(key: string) {
-        return this.elevations.get(key);
+    resolve(method: string) {
+        return this.ctx[symbols.provider.elevations].get(method);
     }
 
     static handler: ProxyHandler<Context> = {
         get(target, prop, ctx: Context) {
-            // 不处理 Symbol
+            // ignore if symbol
             if (typeof prop !== "string") {
                 return Reflect.get(target, prop, ctx);
             }
 
-            // 不处理 Context 上已有的属性
+            // ignore if own property
             if (Reflect.has(target, prop)) {
                 return Reflect.get(target, prop, ctx);
             }
             
+            // check if elevated property
             const resolution = ctx.provider.resolve(prop);
             if (resolution) {
                 const [key, method] = resolution;
-                if (ctx.provider.has(key)) {
-                    const service = ctx.provider.get(key);
-                    if (method in service) {
-                        const value = service[method];
-                        if (typeof value === "function") {
-                            return value.bind(service);
-                        }
-                        return value;
-                    }
+                if (key in ctx) {
+                    // FIXME wrong type
+                    //@ts-ignore
+                    return ctx[key][method];
                 }
                 return undefined;
             }
 
-            if (ctx.provider.has(prop)) {
-                return ctx.provider.get(prop);
+            // check if service
+            if (ctx[symbols.provider.store].has(prop)) {
+                return ctx[symbols.provider.store].get(prop);
             }
 
             return undefined;
         },
         set(target, prop, value, ctx: Context) {
-            // 不处理 Symbol
+            // ignore if symbol
             if (typeof prop !== "string") {
                 return Reflect.set(target, prop, value, ctx);
             }
 
-            if (ctx.provider.has(prop)) {
-                ctx.provider.set(prop, value);
-                return true;
+            // check if elevated property
+            const resolution = ctx.provider.resolve(prop);
+            if (resolution) {
+                // TODO warn
+                const [key, method] = resolution;
+                if (key in ctx) {
+                    // FIXME wrong type
+                    //@ts-ignore
+                    ctx[key][method] = value;
+                    return true;
+                }
+                return false;
             }
 
-            if (ctx.provider.resolve(prop)) {
-                throw new Error(`Cannot set elevated property "${prop}".`);
+            // check if service
+            if (ctx[symbols.provider.store].has(prop)) {
+                // TODO warn
+                ctx[symbols.provider.store].set(prop, value);
+                return true;
             }
 
             return Reflect.set(target, prop, value, ctx);
         },
         has(target, prop) {
-            // 不处理 Symbol
+            // ignore if symbol
             if (typeof prop !== "string") {
                 return Reflect.has(target, prop);
             }
+            // check if own property
             if (Reflect.has(target, prop)) {
                 return true;
             }
-            if (target.provider.has(prop)) {
+            // check if service
+            if (target[symbols.provider.store].has(prop)) {
                 return true;
             }
-            if (target.provider.resolve(prop)) {
-                return true;
+            // check if elevated property
+            const resolution = target.provider.resolve(prop);
+            if (resolution) {
+                const [key, _] = resolution;
+                if (key in target) {
+                    return true;
+                }
             }
             return false;
         }

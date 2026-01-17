@@ -33,6 +33,10 @@ export interface PluginDiagnosisResult {
     issues: PluginDependencyIssue[];
 }
 
+export function isNullish(value: any): value is null | undefined | void {
+    return value === null || value === undefined;
+}
+
 export function pluginDependencyDiagnose(service: PluginService, container: Container): PluginDiagnosisResult {
     const plugins = service.map();
     const pluginNames = Array.from(plugins.keys());
