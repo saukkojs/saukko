@@ -1,5 +1,6 @@
 import { Lifecycle } from "../lifecycle";
 import symbols from "../symbols";
+import { EventsService } from "./events";
 import { PluginService } from "./plugin";
 import { ProviderService } from "./provider";
 
@@ -10,6 +11,7 @@ export interface Context {
     provider: ProviderService;
     plugin: PluginService;
     lifecycle: Lifecycle;
+    events: EventsService;
 }
 
 export class Context {
@@ -20,8 +22,9 @@ export class Context {
         const self = new Proxy(this, ProviderService.handler);
 
         self.provider = new ProviderService(self);
-        self.plugin = new PluginService(self);
         self.lifecycle = new Lifecycle();
+        self.events = new EventsService(self);
+        self.plugin = new PluginService(self);
 
         return self;
     }

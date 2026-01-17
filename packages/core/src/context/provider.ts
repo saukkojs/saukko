@@ -42,6 +42,7 @@ export class ProviderService {
     constructor(private ctx: Context) {
         this.elevate("provider", ["declare", "set", "elevate", "resolve"]);
         this.elevate("plugin", ["use"]);
+        this.elevate("events", ["on", "off", "emit"]);
     }
 
     declare(key: string, value?: any) {
