@@ -1,3 +1,4 @@
+import { Lifecycle } from "../lifecycle";
 import { Context } from "./context";
 
 type PluginMeta = {
@@ -24,7 +25,7 @@ export type Plugin = PluginMeta &
 type PluginRuntime = {
     name: string | undefined;
     config: Record<string, any> | undefined;
-    dispose: () => any;
+    lifecycle: Lifecycle;
 };
 
 declare module './context' {
@@ -72,7 +73,7 @@ export class PluginService {
 
         if (this.plugins.has(plugin)) {
             const existing = this.plugins.get(plugin)!;
-            return existing.dispose;
+            return () => existing.lifecycle.dispose();
         }
 
         const lifecycle = this.ctx.lifecycle.fork();
@@ -84,7 +85,7 @@ export class PluginService {
                     : plugin.name
                 : undefined,
             config,
-            dispose: () => lifecycle.dispose(),
+            lifecycle
         };
 
         this.plugins.set(plugin, runtime);
