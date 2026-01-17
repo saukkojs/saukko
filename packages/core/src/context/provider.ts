@@ -89,7 +89,7 @@ export class ProviderService {
             }
             
             // check if elevated property
-            const resolution = ctx.provider.resolve(prop);
+            const resolution = ctx[symbols.provider.elevations].get(prop);
             if (resolution) {
                 const [key, method] = resolution;
                 if (key in ctx) {
@@ -119,7 +119,7 @@ export class ProviderService {
             }
 
             // check if elevated property
-            const resolution = ctx.provider.resolve(prop);
+            const resolution = ctx[symbols.provider.elevations].get(prop);
             if (resolution) {
                 // TODO warn
                 const [key, method] = resolution;
@@ -155,7 +155,7 @@ export class ProviderService {
                 return true;
             }
             // check if elevated property
-            const resolution = target.provider.resolve(prop);
+            const resolution = target[symbols.provider.elevations].get(prop)(prop);
             if (resolution) {
                 const [key, method] = resolution;
                 const service = target[symbols.provider.store].get(key);
