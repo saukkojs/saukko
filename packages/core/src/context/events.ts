@@ -8,14 +8,14 @@ declare module './context' {
          * @param listener 事件监听器
          * @return 返回一个用于取消监听的函数
          */
-        on(event: string, listener: Function): void;
+        on<T extends keyof Events>(event: T, listener: Events[T]): void;
 
         /**
          * 取消监听一个事件
          * @param event 事件名称
          * @param listener 事件监听器
          */
-        off(event: string, listener: Function): void;
+        off<T extends keyof Events>(event: T, listener: Events[T]): void;
 
         /**
          * 触发一个事件
@@ -24,8 +24,13 @@ declare module './context' {
          * @param event 事件名称
          * @param args 参数
          */
-        emit(event: string, ...args: any[]): void;
+        emit<T extends keyof Events>(event: T, ...args: Parameters<Events[T]>): void;
     }
+}
+
+export interface Events {
+    'internal.ready'(): void;
+    'internal.dispose'(): void;
 }
 
 export class EventsService {
@@ -35,7 +40,7 @@ export class EventsService {
 
     on(event: string, listener: Function) {
         if (event === 'internal.ready') {
-            // full lifecycle management is not implemented yet
+            // TODO full lifecycle management is not implemented yet
             // so we just call the listener immediately
             listener();
             return () => {};
