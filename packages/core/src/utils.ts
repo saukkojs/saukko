@@ -1,10 +1,12 @@
-export interface PluginDependencyIssue {
+export type Awaitable<T> = T | Promise<T>;
+
+interface PluginDependencyIssue {
     plugin: string;
     type: 'missing-dependency' | 'circular-dependency';
     details: string[];
 }
 
-export interface PluginDiagnosisResult {
+interface PluginDiagnosisResult {
     order: string[];
     issues: PluginDependencyIssue[];
 }
