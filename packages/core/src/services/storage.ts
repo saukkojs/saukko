@@ -1,7 +1,6 @@
 import fs from "fs";
-import { ConfigService } from "./config";
-import { LoggerService } from "./logger";
 import path from "path";
+import { Context, Service } from "../context";
 
 type Config = {
     path: string;
@@ -66,28 +65,22 @@ class Storage {
     }
 }
 
-export class StorageService {
-    static inject = ['logger', 'config'] as const;
+export class StorageService extends Service {
     private storages: Map<string, Storage> = new Map();
-    private config: Config;
 
-    constructor(
-        private logger: LoggerService,
-        config: ConfigService
-    ) {
-        const storageConfig = config.get('service.config.storage');
-        this.config = {
-            path: storageConfig?.path ?? './.storage',
-        };
+    constructor(ctx: Context, private config: Config = {
+        path: path.join(process.cwd(), '.storage')
+    }) {
+        super(ctx, 'storage', true);
 
         if (!fs.existsSync(this.config.path)) {
             fs.mkdirSync(this.config.path, { recursive: true });
         }
 
         if (!fs.statSync(this.config.path).isDirectory()) {
-            this.logger.log('storage', 'error', `存储路径 "${this.config.path}" 不是一个目录`);
+            this.ctx.emit('internal.log', 'storage', 'error', `存储路径 "${this.config.path}" 不是一个目录`);
             const randomDir = `${this.config.path}-${Date.now()}`;
-            this.logger.log('storage', 'error', `将尝试使用临时目录 "${randomDir}" 作为存储路径`);
+            this.ctx.emit('internal.log', 'storage', 'error', `将尝试使用临时目录 "${randomDir}" 作为存储路径`);
             fs.mkdirSync(randomDir, { recursive: true });
             this.config.path = randomDir;
         }
@@ -96,7 +89,7 @@ export class StorageService {
             if (file.endsWith('.json')) {
                 const name = path.basename(file, '.json');
                 this.storages.set(name, new Storage(name, path.join(this.config.path, file)));
-                logger.log('storage', 'info', `加载 Storage "${file}"`);
+                this.ctx.emit('internal.log', 'storage', 'info', `加载 Storage "${file}"`);
             }
         })
     }
@@ -120,7 +113,7 @@ export class StorageService {
 
     get(name: string) {
         if (!this.storages.has(name)) {
-            this.logger.log('storage', 'error', `"${name}" 不存在`);
+            this.ctx.emit('internal.log', 'storage', 'error', `"${name}" 不存在`);
             return;
         }
         return this.storages.get(name);
@@ -132,7 +125,7 @@ export class StorageService {
 
     delete(name: string) {
         if (!this.storages.has(name)) {
-            this.logger.log('storage', 'error', `"${name}" 不存在`);
+            this.ctx.emit('internal.log', 'storage', 'error', `"${name}" 不存在`);
             return false;
         }
         this.storages.get(name)!.deleted = true;
@@ -140,8 +133,7 @@ export class StorageService {
             fs.unlinkSync(this.storages.get(name)!.filePath);
         }
         this.storages.delete(name);
-        this.logger.log('storage', 'info', `成功删除 Storage "${name}"`);
+        this.ctx.emit('internal.log', 'storage', 'info', `成功删除 Storage "${name}"`);
         return true;
     }
-
 }

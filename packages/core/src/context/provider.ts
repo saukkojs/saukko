@@ -66,7 +66,7 @@ export class ProviderService {
         }
         for (const [method, target] of Object.entries(methods)) {
             if (this.ctx[symbols.provider.elevations].has(method)) {
-                // TODO warn
+                this.ctx.emit('internal.log', 'provider', 'warn', `method "${method}" is already elevated. overwriting.`);
             }
             this.ctx[symbols.provider.elevations].set(method, [key, target]);
         }
@@ -121,7 +121,7 @@ export class ProviderService {
             // check if elevated property
             const resolution = ctx[symbols.provider.elevations].get(prop);
             if (resolution) {
-                // TODO warn
+                ctx.emit('internal.log', 'provider', 'warn', `trying to set an elevated property "${prop}". overwriting.`);
                 const [key, method] = resolution;
                 if (key in ctx) {
                     // FIXME wrong type
@@ -129,12 +129,13 @@ export class ProviderService {
                     ctx[key][method] = value;
                     return true;
                 }
+                ctx.emit('internal.log', 'provider', 'warn', `failed to set elevated property "${prop}" because service "${key}" does not exist.`);
                 return false;
             }
 
             // check if service
             if (ctx[symbols.provider.store].has(prop)) {
-                // TODO warn
+                ctx.emit('internal.log', 'provider', 'warn', `trying to set a property standing for service "${prop}". overwriting.`);
                 ctx[symbols.provider.store].set(prop, value);
                 return true;
             }

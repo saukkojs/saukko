@@ -8,7 +8,7 @@ declare module './context' {
          * @param listener 事件监听器
          * @return 返回一个用于取消监听的函数
          */
-        on<T extends keyof Events>(event: T, listener: Events[T]): void;
+        on<T extends keyof Events>(event: T, listener: Events[T]): () => any;
 
         /**
          * 取消监听一个事件
@@ -31,6 +31,7 @@ declare module './context' {
 export interface Events {
     'internal.ready'(): void;
     'internal.dispose'(): void;
+    'internal.log'(name: string, level: string, ...messages: any[]): void;
 }
 
 export class EventsService {
