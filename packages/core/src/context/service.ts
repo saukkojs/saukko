@@ -27,6 +27,7 @@ export abstract class Service {
         }
 
         ctx.on('internal.dispose', () => {
+            ctx.set(name, null);
             this.stop();
         })
     }
