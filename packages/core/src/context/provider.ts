@@ -155,7 +155,7 @@ export class ProviderService {
                 return true;
             }
             // check if elevated property
-            const resolution = target[symbols.provider.elevations].get(prop)(prop);
+            const resolution = target[symbols.provider.elevations].get(prop);
             if (resolution) {
                 const [key, method] = resolution;
                 const service = target[symbols.provider.store].get(key);
