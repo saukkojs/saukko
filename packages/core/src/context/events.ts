@@ -1,3 +1,4 @@
+import { LogType } from "@cocotais/logger";
 import { Context } from "./context";
 
 declare module './context' {
@@ -31,7 +32,7 @@ declare module './context' {
 export interface Events {
     'internal.ready'(): void;
     'internal.dispose'(): void;
-    'internal.log'(name: string, level: string, ...messages: any[]): void;
+    'internal.log'(name: string, level: LogType, ...messages: any[]): void;
 }
 
 export class EventsService {

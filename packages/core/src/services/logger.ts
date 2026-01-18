@@ -1,17 +1,16 @@
-import log from '@cocotais/logger';
-import { LogLevel } from '../types';
+import log, { LogType } from '@cocotais/logger';
 import { Context, Service } from '../context';
 
 export class LoggerService extends Service {
     constructor(ctx: Context) {
         super(ctx, 'logger', true);
 
-        ctx.on('internal.log', (name: string, level: string, ...messages: any[]) => {
-            this.log(name, level as LogLevel, ...messages);
+        ctx.on('internal.log', (name: string, level: LogType, ...messages: any[]) => {
+            this.log(name, level, ...messages);
         })
     }
 
-    log(name: string, level: LogLevel, ...messages: any[]) {
+    log(name: string, level: LogType, ...messages: any[]) {
         log(name, level, {
             hasDate: true,
             toConsole: true

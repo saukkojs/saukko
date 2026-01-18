@@ -1,6 +1,3 @@
-export type LogLevel = 'trace' | 'debug' | 'info' | 'notice' | 'warn' | 'error';
-export type LogLevelExtended = LogLevel | 'silent';
-
 export interface PluginConfigRegistry { }
 export interface ServiceConfigRegistry {
     storage: {
