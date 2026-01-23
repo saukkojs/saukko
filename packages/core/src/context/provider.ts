@@ -45,13 +45,10 @@ export class ProviderService {
         this.elevate("events", ["on", "off", "emit"]);
     }
 
-    declare(key: string, value?: any) {
-        if (this.ctx[symbols.provider.store].has(key)) return;  // ignore if exists
-        this.ctx[symbols.provider.store].set(key, value);
+    set(key: string, value: any = undefined) {
+        if (!this.ctx[symbols.provider.store].has(key)) {
+            this.ctx[symbols.provider.store].set(key, undefined);
     }
-
-    set(key: string, value: any) {
-        this.declare(key);
         const old = this.ctx[symbols.provider.store].get(key);
         if (old === value) return;  // ignore if same
         if (!isNullish(value) && !isNullish(old)) {
@@ -153,7 +150,7 @@ export class ProviderService {
             }
             // check if service
             if (target[symbols.provider.store].has(prop)) {
-                return true;
+                return !isNullish(target[symbols.provider.store].get(prop));
             }
             // check if elevated property
             const resolution = target[symbols.provider.elevations].get(prop);
