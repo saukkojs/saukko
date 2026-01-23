@@ -22,7 +22,7 @@ export class Context {
         const self = new Proxy(this, ProviderService.handler);
 
         self.provider = new ProviderService(self);
-        self.lifecycle = new Lifecycle();
+        self.lifecycle = new Lifecycle(self);
         self.events = new EventsService(self);
         self.plugin = new PluginService(self);
 

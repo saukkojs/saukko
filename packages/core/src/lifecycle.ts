@@ -1,7 +1,10 @@
+import { Context } from "./context";
+
 export class Lifecycle {
     public disposals = new Set<Function>();
+    public children = new Set<Lifecycle>();
 
-    constructor() {}
+    constructor(private ctx: Context) {}
 
     collect(callback: () => any) {
         const dispose = () => {
@@ -18,8 +21,9 @@ export class Lifecycle {
         return Promise.all(disposals.map(fn => fn()));
     }
 
-    fork() {
-        const forked = new Lifecycle();
+    fork(ctx?: Context) {
+        const forked = new Lifecycle(ctx || this.ctx);
+        this.children.add(forked);
         this.collect(() => {
             forked.dispose();
         });
