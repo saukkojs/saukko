@@ -33,6 +33,7 @@ export interface Events {
     'internal.ready'(): void;
     'internal.dispose'(): void;
     'internal.log'(name: string, level: LogType, ...messages: any[]): void;
+    'internal.runtime'(name: string): void;
 }
 
 export class EventsService {

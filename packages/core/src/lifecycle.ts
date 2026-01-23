@@ -4,7 +4,13 @@ export class Lifecycle {
     public disposals = new Set<Function>();
     public children = new Set<Lifecycle>();
 
-    constructor(private ctx: Context) {}
+    constructor(private ctx: Context, private inject: Array<string> = []) {
+        ctx.on('internal.runtime', (name) => {
+            if (this.inject.includes(name)) {
+                // TODO rollback
+            }
+        });
+    }
 
     collect(callback: () => any) {
         const dispose = () => {
@@ -21,8 +27,8 @@ export class Lifecycle {
         return Promise.all(disposals.map(fn => fn()));
     }
 
-    fork(ctx?: Context) {
-        const forked = new Lifecycle(ctx || this.ctx);
+    fork(inject: Array<string> = []) {
+        const forked = new Lifecycle(this.ctx, inject);
         this.children.add(forked);
         this.collect(() => {
             forked.dispose();

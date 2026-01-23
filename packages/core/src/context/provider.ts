@@ -48,13 +48,14 @@ export class ProviderService {
     set(key: string, value: any = undefined) {
         if (!this.ctx[symbols.provider.store].has(key)) {
             this.ctx[symbols.provider.store].set(key, undefined);
-    }
+        }
         const old = this.ctx[symbols.provider.store].get(key);
         if (old === value) return;  // ignore if same
         if (!isNullish(value) && !isNullish(old)) {
             throw new Error(`service "${key}" is already set.`);
         }
         this.ctx[symbols.provider.store].set(key, value);
+        this.ctx.emit('internal.runtime', key);
     }
 
     elevate(key: string, methods: string[] | Record<string, string>) {
