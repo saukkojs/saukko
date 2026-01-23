@@ -53,7 +53,12 @@ export class PluginService {
 
     private resolve(plugin: Plugin): Function | undefined {
         if (typeof plugin === "function") {
-            return plugin;
+            if (/^class\s/.test(plugin.toString())) {
+                return (ctx: Context, config: Record<string, any>) => {
+                    new (plugin as PluginClassLike)(ctx, config);
+                };
+            }
+            return plugin as PluginFunctionLike;
         }
         if (plugin.apply && typeof plugin.apply === "function") {
             return plugin.apply;
