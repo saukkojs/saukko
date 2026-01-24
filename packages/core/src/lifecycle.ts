@@ -1,8 +1,21 @@
 import { Context } from "./context";
+import symbols from "./symbols";
+import { Awaitable } from "./utils";
+
+export enum LifecycleState {
+    PENDING = 0,
+    LOADING = 1,
+    ACTIVE = 2,
+    UNLOADING = 3,
+    DISPOSED = 4,
+    FAILED = 5
+}
 
 export class Lifecycle {
-    public disposals = new Set<Function>();
+    public assurances = new Set<() => Awaitable<any>>();
+    public disposals = new Set<() => Awaitable<any>>();
     public children = new Set<Lifecycle>();
+    public state: LifecycleState = LifecycleState.PENDING;
 
     constructor(private ctx: Context, private inject: Array<string> = []) {
         ctx.on('internal.runtime', (name) => {
@@ -12,7 +25,41 @@ export class Lifecycle {
         });
     }
 
-    collect(callback: () => any) {
+    private collapse() {
+        const disposals = Array.from(this.disposals);
+        disposals.forEach(fn => (async () => fn())().catch((e: any) => {
+            this.ctx.emit('internal.log', 'lifecycle', 'warn', 'collapse got error: ', e);
+        }));
+    }
+
+    private checkReady() {
+        let ready = true;
+        for (const name of this.inject) {
+            if (!this.ctx[symbols.provider.store].has(name)) {
+                ready = false;
+                break;
+            }
+        }
+        return ready;
+    }
+
+    setup() {
+        if (this.state !== LifecycleState.PENDING) return;
+        if (!this.checkReady()) return;
+
+        this.state = LifecycleState.LOADING;
+        
+        const assurances = Array.from(this.assurances);
+        assurances.forEach(fn => (async () => fn())().catch((e: any) => {
+            this.ctx.emit('internal.log', 'lifecycle', 'warn', 'setup got error: ', e);
+            this.state = LifecycleState.FAILED;
+        }));
+        
+        this.state = LifecycleState.ACTIVE;
+        
+    }
+
+    collect<T>(callback: () => T) {
         const dispose = () => {
             this.disposals.delete(dispose);
             return callback()
@@ -21,10 +68,23 @@ export class Lifecycle {
         return dispose;
     }
 
+    ensure(callback: () => Awaitable<any>) {
+        this.assurances.add(callback);
+    }
+
     dispose() {
-        const disposals = Array.from(this.disposals);
-        this.disposals.clear();
-        return Promise.all(disposals.map(fn => fn()));
+        if (this.state === LifecycleState.DISPOSED || this.state === LifecycleState.UNLOADING) return;
+        this.state = LifecycleState.UNLOADING;
+        this.collapse();
+        this.state = LifecycleState.DISPOSED;
+    }
+
+    rollback() {
+        if (this.state === LifecycleState.DISPOSED || this.state === LifecycleState.UNLOADING || this.state === LifecycleState.FAILED) return;
+        this.state = LifecycleState.UNLOADING;
+        this.collapse();
+        this.state = LifecycleState.PENDING;
+        this.setup();
     }
 
     fork(inject: Array<string> = []) {
