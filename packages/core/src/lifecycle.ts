@@ -18,9 +18,10 @@ export class Lifecycle {
     public state: LifecycleState = LifecycleState.PENDING;
 
     constructor(private ctx: Context, private inject: Array<string> = []) {
+        this.setup();
         ctx.on('internal.runtime', (name) => {
             if (this.inject.includes(name)) {
-                // TODO rollback
+                this.rollback();
             }
         });
     }
