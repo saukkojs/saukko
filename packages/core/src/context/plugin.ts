@@ -82,7 +82,7 @@ export class PluginService {
             return () => existing.lifecycle.dispose();
         }
 
-        const lifecycle = this.ctx.lifecycle.fork();
+        const lifecycle = this.ctx.lifecycle.fork(plugin.inject || []);
         const context = this.ctx.extend({
             lifecycle
         });
@@ -100,7 +100,7 @@ export class PluginService {
 
         this.plugins.set(plugin, runtime);
 
-        await apply(context, config);
+        lifecycle.ensure(async () => await apply(context, config))
 
         return lifecycle.collect(() => {
             lifecycle.dispose();
