@@ -1,6 +1,6 @@
 import { Context } from "./context";
 import symbols from "./symbols";
-import { Awaitable } from "./utils";
+import { Awaitable, isNullish } from "./utils";
 
 export enum LifecycleState {
     PENDING = 0,
@@ -29,7 +29,7 @@ export class Lifecycle {
     private checkReady() {
         let ready = true;
         for (const name of this.inject) {
-            if (!this.ctx[symbols.provider.store].has(name)) {
+            if (!this.ctx[symbols.provider.store].has(name) || isNullish(this.ctx[symbols.provider.store].get(name))) {
                 ready = false;
                 break;
             }
