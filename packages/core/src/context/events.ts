@@ -43,9 +43,7 @@ export class EventsService {
 
     on(event: string, listener: Function) {
         if (event === 'internal.ready') {
-            // TODO full lifecycle management is not implemented yet
-            // so we just call the listener immediately
-            listener();
+            this.ctx.lifecycle.ensure(() => listener());
             return () => {};
         }
         if (event === 'internal.dispose') {

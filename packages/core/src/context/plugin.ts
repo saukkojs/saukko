@@ -101,6 +101,13 @@ export class PluginService {
         this.plugins.set(plugin, runtime);
 
         lifecycle.ensure(async () => await apply(context, config))
+        lifecycle.setup();
+
+        this.ctx.on('internal.runtime', (name) => {
+            if (plugin.inject?.includes(name)) {
+                lifecycle.rollback();
+            }
+        });
 
         return lifecycle.collect(() => {
             lifecycle.dispose();

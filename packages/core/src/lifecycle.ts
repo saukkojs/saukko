@@ -17,14 +17,7 @@ export class Lifecycle {
     public children = new Set<Lifecycle>();
     public state: LifecycleState = LifecycleState.PENDING;
 
-    constructor(private ctx: Context, private inject: Array<string> = []) {
-        this.setup();
-        ctx.on('internal.runtime', (name) => {
-            if (this.inject.includes(name)) {
-                this.rollback();
-            }
-        });
-    }
+    constructor(private ctx: Context, private inject: Array<string> = []) {}
 
     private collapse() {
         const disposals = Array.from(this.disposals);
@@ -49,7 +42,7 @@ export class Lifecycle {
         if (!this.checkReady()) return;
 
         this.state = LifecycleState.LOADING;
-        
+
         const assurances = Array.from(this.assurances);
         assurances.forEach(fn => (async () => fn())().catch((e: any) => {
             this.ctx.emit('internal.log', 'lifecycle', 'warn', 'setup got error: ', e);
@@ -70,6 +63,11 @@ export class Lifecycle {
     }
 
     ensure(callback: () => Awaitable<any>) {
+        if (this.state === LifecycleState.LOADING || this.state === LifecycleState.ACTIVE) {
+            (async () => callback())().catch((e: any) => {
+                this.ctx.emit('internal.log', 'lifecycle', 'warn', 'ensure got error: ', e);
+            });
+        }
         this.assurances.add(callback);
     }
 
