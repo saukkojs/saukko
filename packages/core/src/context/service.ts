@@ -13,8 +13,7 @@ export abstract class Service {
         protected name: string,
         protected immediate: boolean = false
     ) {
-        ctx.declare(name);
-        
+        ctx.set(name, undefined);
         if (immediate) {
             ctx.set(name, this);
             this.start();

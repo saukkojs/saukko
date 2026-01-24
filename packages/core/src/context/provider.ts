@@ -5,13 +5,6 @@ import { Context } from "./context";
 declare module './context' {
     interface Context {
         /**
-         * 在 Context 上声明一个服务
-         * @param key 服务的名称
-         * @param value 可选，提供服务的初始值
-         */
-        declare(key: string, value?: any): void;
-
-        /**
          * 设置一个服务的值
          * 
          * 如果服务未被声明，则会先声明该服务
@@ -20,7 +13,7 @@ declare module './context' {
          * @param key 服务的名称
          * @param value 服务的值，如果为 `null` 或 `undefined`，则表示删除该服务
          */
-        set(key: string, value: any): void;
+        set(key: string, value?: any): void;
 
         /**
          * 提升 Context 上某个服务或属性下的方法（或属性）到 Context
