@@ -19,6 +19,8 @@ export abstract class Service {
             this.start();
         }
         else {
+            // FIXME buggy but works for now
+            // should be fixed later
             ctx.on('internal.ready', () => {
                 ctx.set(name, this);
                 this.start();
