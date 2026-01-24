@@ -26,6 +26,7 @@ export class Context {
         self.events = new EventsService(self);
         self.plugin = new PluginService(self);
 
+        self.lifecycle.setup();
         return self;
     }
 
