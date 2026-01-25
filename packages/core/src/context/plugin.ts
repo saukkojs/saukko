@@ -42,7 +42,7 @@ declare module './context' {
         use(
             plugin: Plugin,
             config?: Record<string, any>
-        ): Promise<() => void>;
+        ): () => void;
     }
 }
 
@@ -68,7 +68,7 @@ export class PluginService {
     /**
      * @use `ctx.use`
      */
-    async use(plugin: Plugin, config: Record<string, any> = {}) {
+    use(plugin: Plugin, config: Record<string, any> = {}) {
         const apply = this.resolve(plugin);
         if (!apply) {
             throw new Error(
