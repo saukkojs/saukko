@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Lifecycle, LifecycleState } from '../src/lifecycle';
+import { PluginContext } from '../src/services/plugin/context';
 
 test('becomes active only after asynchronous startup completes', async () => {
     const lifecycle = new Lifecycle();
@@ -70,4 +71,26 @@ test('cleans up already-started resources when startup fails', async () => {
 
     assert.deepEqual(calls, ['started', 'cleaned']);
     assert.equal(lifecycle.state, LifecycleState.FAILED);
+});
+
+test('PluginContext emits lifecycle events before it removes plugin listeners', async () => {
+    const context = new PluginContext({}, new Map(), [], new Map());
+    const calls: string[] = [];
+
+    context.on('internal.ready', () => {
+        calls.push('ready');
+    });
+    context.on('internal.dispose', () => {
+        calls.push('dispose');
+    });
+    context.on('custom.event' as never, () => {
+        calls.push('custom');
+    });
+
+    await context.start();
+    await context.dispose();
+    context.emit('custom.event' as never, {} as never);
+
+    assert.deepEqual(calls, ['ready', 'dispose']);
+    assert.equal(context.lifecycle.state, LifecycleState.STOPPED);
 });
