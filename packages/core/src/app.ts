@@ -30,11 +30,19 @@ export class App {
     async stop() {
         this.logger.log('app', 'info', 'Stopping app...');
         const plugins = this.plugin.map();
+        const errors: unknown[] = [];
         for (const [name, plugin] of plugins) {
             if (plugin.enabled) {
-                await this.plugin.dispose(name);
+                try {
+                    await this.plugin.dispose(name);
+                } catch (error) {
+                    errors.push(error);
+                    this.logger.log('app', 'error', `Failed to stop plugin ${name}.`, error);
+                }
             }
         }
         this.logger.log('app', 'info', 'App stopped.');
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) throw new AggregateError(errors, 'Multiple plugins failed to stop.');
     }
 }
