@@ -1,4 +1,3 @@
-import type { Awaitable } from "../../lifecycle";
 import type { Bot } from "./bot";
 
 export interface PluginDependenciesRegistry { };
@@ -9,4 +8,4 @@ export type Event<T extends keyof Events> = {
     bot?: Bot;
 };
 
-export type EventListener<T extends keyof Events> = (event: Event<T>) => Awaitable<void>;
+export type EventListener<T extends keyof Events> = (event: Event<T>) => void;

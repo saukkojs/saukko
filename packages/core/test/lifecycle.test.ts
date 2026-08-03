@@ -135,32 +135,24 @@ test('PluginContext removes its business event listeners during disposal', async
     });
 
     await context.start();
-    await context.emit('test.event', { name: 'test.event', data: { value: 'first' } });
+    context.emit('test.event', { name: 'test.event', data: { value: 'first' } });
     await context.dispose();
     const sibling = new PluginContext({}, new Map(), [], sharedEvents);
-    await sibling.emit('test.event', { name: 'test.event', data: { value: 'second' } });
+    sibling.emit('test.event', { name: 'test.event', data: { value: 'second' } });
 
     assert.deepEqual(calls, ['event']);
     assert.equal(context.lifecycle.state, LifecycleState.STOPPED);
 });
 
-test('PluginContext waits for asynchronous business event listeners', async () => {
+test('PluginContext dispatches business events synchronously', () => {
     const context = new PluginContext({}, new Map(), [], new Map());
     const calls: string[] = [];
-    let releaseEvent!: () => void;
-    const eventGate = new Promise<void>((resolve) => {
-        releaseEvent = resolve;
-    });
 
-    context.on('test.event', async () => {
+    context.on('test.event', () => {
         calls.push('event');
-        await eventGate;
     });
 
-    const emitting = context.emit('test.event', { name: 'test.event', data: { value: 'test' } });
+    const result = context.emit('test.event', { name: 'test.event', data: { value: 'test' } });
     assert.deepEqual(calls, ['event']);
-    releaseEvent();
-    await emitting;
-
-    assert.deepEqual(calls, ['event']);
+    assert.equal(result, undefined);
 });

@@ -57,12 +57,12 @@ export class PluginContext {
         }
     }
 
-    async emit<T extends keyof Events>(event: T, args: Event<T>) {
+    emit<T extends keyof Events>(event: T, args: Event<T>) {
         if (this.disposed) return;
         const listeners = this.sharedEventListeners.get(event as string);
         if (!listeners) return;
         for (const listener of [...listeners]) {
-            await listener(args as Event<keyof Events>);
+            listener(args as Event<keyof Events>);
         }
     }
 

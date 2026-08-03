@@ -4,7 +4,7 @@ import { Events } from "./types";
 export abstract class Bot {
     constructor(public context: PluginContext) { }
     protected emit<T extends keyof Events>(name:T, data: Events[T]) {
-        return this.context.emit(name, {
+        this.context.emit(name, {
             name,
             data,
             bot: this
