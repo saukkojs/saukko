@@ -129,11 +129,14 @@ export class PluginService {
         }
     }
 
-    remove(name: string) {
+    async remove(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
             this.logger.log('plugin', 'error', `Cannot remove plugin ${name}: not found`);
             return;
+        }
+        if (plugin.enabled) {
+            await this.dispose(name);
         }
         this.plugins.delete(name);
         this.logger.log('plugin', 'info', `- ${name}`);

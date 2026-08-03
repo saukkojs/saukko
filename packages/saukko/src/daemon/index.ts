@@ -191,7 +191,7 @@ async function handleMessage(message: DaemonMessage, socket: net.Socket, app: Ap
 					if (pluginService.map().has(rest[1]) === false) {
 						throw new Error(`未找到插件 ${rest[1]}，可能未安装`);
 					}
-					pluginService.remove(rest[1]);
+					await pluginService.remove(rest[1]);
 					logger.info(`已通过 IPC 卸载插件 ${rest[1]}`);
 					const response: DaemonResponse = { ok: true, message: `已卸载插件 ${rest[1]}` };
 					socket.write(JSON.stringify(response) + '\n');

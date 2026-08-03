@@ -22,18 +22,18 @@ export class PluginContext {
                 data: {}
             });
         });
-        this.lifecycle.onStop(() => {
-            this.disposed = true;
-            for (const dispose of this.disposers.splice(0).reverse()) {
-                dispose();
-            }
-        });
-        this.lifecycle.onStop(() => {
+        this.lifecycle.onBeforeStop(() => {
             if (!this.ready) return;
             this.emit('internal.dispose', {
                 name: 'internal.dispose',
                 data: {}
             });
+        });
+        this.lifecycle.onStop(() => {
+            this.disposed = true;
+            for (const dispose of this.disposers.splice(0).reverse()) {
+                dispose();
+            }
         });
     }
 

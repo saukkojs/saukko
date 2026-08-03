@@ -14,6 +14,7 @@ export enum LifecycleState {
 
 export class Lifecycle {
     private readonly starts: LifecycleStart[] = [];
+    private readonly beforeStops: LifecycleCleanup[] = [];
     private readonly cleanups: LifecycleCleanup[] = [];
     private startTask?: Promise<void>;
     private stopTask?: Promise<void>;
@@ -27,11 +28,15 @@ export class Lifecycle {
     }
 
     onStop(callback: LifecycleCleanup): () => void {
-        if (this.state === LifecycleState.STOPPED || this.state === LifecycleState.FAILED) {
-            throw new Error(`Cannot register a cleanup handler after lifecycle is ${this.state}.`);
-        }
+        this.assertNotStopped('register a cleanup handler');
         this.cleanups.push(callback);
         return () => this.remove(this.cleanups, callback);
+    }
+
+    onBeforeStop(callback: LifecycleCleanup): () => void {
+        this.assertNotStopped('register a stop notification handler');
+        this.beforeStops.push(callback);
+        return () => this.remove(this.beforeStops, callback);
     }
 
     start(): Promise<void> {
@@ -52,8 +57,9 @@ export class Lifecycle {
         }
         if (this.state === LifecycleState.FAILED) return Promise.resolve();
 
+        const notify = this.state === LifecycleState.ACTIVE;
         this.state = LifecycleState.STOPPING;
-        this.stopTask = this.runStop();
+        this.stopTask = this.runStop(notify);
         return this.stopTask;
     }
 
@@ -71,41 +77,62 @@ export class Lifecycle {
         }
     }
 
-    private async runStop() {
-        try {
-            await this.disposeAll();
-            this.state = LifecycleState.STOPPED;
-        } catch (error) {
-            this.state = LifecycleState.FAILED;
-            throw error;
+    private async runStop(notify: boolean) {
+        const errors: unknown[] = [];
+        if (notify && this.beforeStops.length > 0) {
+            errors.push(...await this.runBeforeStops());
         }
+        errors.push(...await this.disposeAll());
+        if (errors.length === 0) {
+            this.state = LifecycleState.STOPPED;
+            return;
+        }
+        this.state = LifecycleState.FAILED;
+        this.throwErrors(errors, 'Multiple lifecycle stop handlers failed.');
     }
 
     private async disposeAfterFailure() {
-        try {
-            await this.disposeAll();
-        } catch {
-            // Preserve the startup error as the public failure reason.
-        }
+        await this.disposeAll();
+    }
+
+    private async runBeforeStops() {
+        return this.runCallbacks([...this.beforeStops].reverse());
     }
 
     private async disposeAll() {
-        const errors: unknown[] = [];
+        const callbacks: LifecycleCleanup[] = [];
         while (this.cleanups.length > 0) {
-            const cleanup = this.cleanups.pop()!;
+            callbacks.push(this.cleanups.pop()!);
+        }
+        return this.runCallbacks(callbacks);
+    }
+
+    private async runCallbacks(callbacks: LifecycleCleanup[]) {
+        const errors: unknown[] = [];
+        for (const callback of callbacks) {
             try {
-                await cleanup();
+                await callback();
             } catch (error) {
                 errors.push(error);
             }
         }
+        return errors;
+    }
+
+    private throwErrors(errors: unknown[], message: string): never {
         if (errors.length === 1) throw errors[0];
-        if (errors.length > 1) throw new AggregateError(errors, 'Multiple lifecycle cleanup handlers failed.');
+        throw new AggregateError(errors, message);
     }
 
     private assertPending(operation: string) {
         if (this.state !== LifecycleState.PENDING) {
             throw new Error(`Cannot ${operation} while lifecycle is ${this.state}.`);
+        }
+    }
+
+    private assertNotStopped(operation: string) {
+        if (this.state === LifecycleState.STOPPED || this.state === LifecycleState.FAILED) {
+            throw new Error(`Cannot ${operation} after lifecycle is ${this.state}.`);
         }
     }
 
