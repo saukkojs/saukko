@@ -3,6 +3,7 @@ import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { Bot } from "./bot";
 import { PluginContext } from "./context";
+import { EventListener, Events } from "./types";
 
 type AsyncAble<T> = T | Promise<T>;
 
@@ -24,7 +25,7 @@ export class PluginService {
     static inject = ['container', 'logger', 'config'] as const;
     private plugins = new Map<string, PluginMapItem>();
     private bots: Array<Bot> = [];
-    private sharedEventListeners = new Map<string, Function[]>();
+    private sharedEventListeners = new Map<string, EventListener<keyof Events>[]>();
 
     constructor(
         private container: Container,

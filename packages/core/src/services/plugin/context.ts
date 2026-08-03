@@ -1,34 +1,18 @@
 import { Bot } from "./bot";
-import { PluginDependenciesRegistry, Events, Event } from "./types";
+import { PluginDependenciesRegistry, Events, Event, EventListener } from "./types";
 import { Lifecycle } from "../../lifecycle";
 
 export class PluginContext {
-    private eventListeners: Map<string, Function[]> = new Map();
     private disposers: Array<() => void> = [];
     private disposed = false;
-    private ready = false;
     public readonly lifecycle = new Lifecycle();
 
     constructor(
         public readonly dependencies: PluginDependenciesRegistry,
         public readonly config: Map<string, any>,
         public bots: Array<Bot>,
-        private sharedEventListeners: Map<string, Function[]>
+        private sharedEventListeners: Map<string, EventListener<keyof Events>[]>
     ) {
-        this.lifecycle.onStart(() => {
-            this.ready = true;
-            this.emit('internal.ready', {
-                name: 'internal.ready',
-                data: {}
-            });
-        });
-        this.lifecycle.onBeforeStop(() => {
-            if (!this.ready) return;
-            this.emit('internal.dispose', {
-                name: 'internal.dispose',
-                data: {}
-            });
-        });
         this.lifecycle.onStop(() => {
             this.disposed = true;
             for (const dispose of this.disposers.splice(0).reverse()) {
@@ -37,59 +21,48 @@ export class PluginContext {
         });
     }
 
-    private getListenerMap(event: string): Map<string, Function[]> {
-        if (event === 'internal.ready' || event === 'internal.dispose') {
-            return this.eventListeners;
-        }
-        return this.sharedEventListeners;
-    }
-
-    private disposeGenerator(event: string, listener: Function) {
+    private disposeGenerator<T extends keyof Events>(event: T, listener: EventListener<T>) {
         return () => {
-            const map = this.getListenerMap(event);
-            const listeners = map.get(event);
+            const listeners = this.sharedEventListeners.get(event as string);
             if (!listeners) return;
-            const index = listeners.indexOf(listener);
+            const index = listeners.indexOf(listener as EventListener<keyof Events>);
             if (index !== -1) {
                 listeners.splice(index, 1);
                 if (listeners.length === 0) {
-                    map.delete(event);
+                    this.sharedEventListeners.delete(event as string);
                 }
             }
         }
     }
 
-    on<T extends keyof Events>(event: T, listener: (event: Event<T>) => void) {
+    on<T extends keyof Events>(event: T, listener: EventListener<T>) {
         if (this.disposed) return () => {};
-        const map = this.getListenerMap(event as string);
-        if (!map.has(event as string)) {
-            map.set(event as string, []);
+        if (!this.sharedEventListeners.has(event as string)) {
+            this.sharedEventListeners.set(event as string, []);
         }
-        map.get(event as string)!.push(listener);
+        this.sharedEventListeners.get(event as string)!.push(listener as EventListener<keyof Events>);
 
-        const dispose = this.disposeGenerator(event as string, listener);
+        const dispose = this.disposeGenerator(event, listener);
         this.disposers.push(dispose);
         return dispose;
     }
 
-    off<T extends keyof Events>(event: T, listener: (event: Event<T>) => void) {
+    off<T extends keyof Events>(event: T, listener: EventListener<T>) {
         if (this.disposed) return;
-        const map = this.getListenerMap(event as string);
-        const listeners = map.get(event as string);
+        const listeners = this.sharedEventListeners.get(event as string);
         if (!listeners) return;
-        const index = listeners.indexOf(listener);
+        const index = listeners.indexOf(listener as EventListener<keyof Events>);
         if (index !== -1) {
             listeners.splice(index, 1);
         }
     }
 
-    emit<T extends keyof Events>(event: T, args: Event<T>) {
+    async emit<T extends keyof Events>(event: T, args: Event<T>) {
         if (this.disposed) return;
-        const map = this.getListenerMap(event as string);
-        const listeners = map.get(event as string);
+        const listeners = this.sharedEventListeners.get(event as string);
         if (!listeners) return;
-        for (const listener of listeners) {
-            listener(args);
+        for (const listener of [...listeners]) {
+            await listener(args as Event<keyof Events>);
         }
     }
 
