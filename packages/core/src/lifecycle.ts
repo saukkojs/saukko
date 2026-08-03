@@ -131,7 +131,11 @@ export class Lifecycle {
     }
 
     private assertNotStopped(operation: string) {
-        if (this.state === LifecycleState.STOPPED || this.state === LifecycleState.FAILED) {
+        if (
+            this.state === LifecycleState.STOPPING ||
+            this.state === LifecycleState.STOPPED ||
+            this.state === LifecycleState.FAILED
+        ) {
             throw new Error(`Cannot ${operation} after lifecycle is ${this.state}.`);
         }
     }
