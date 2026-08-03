@@ -32,7 +32,7 @@ export class App {
         const plugins = this.plugin.map();
         for (const [name, plugin] of plugins) {
             if (plugin.enabled) {
-                this.plugin.dispose(name);
+                await this.plugin.dispose(name);
             }
         }
         this.logger.log('app', 'info', 'App stopped.');

@@ -86,21 +86,29 @@ export class PluginService {
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
         const currentConfig = pluginConfig[name] || {};
         const context = new PluginContext(injections, currentConfig, this.bots, this.sharedEventListeners);
-        await plugin.module.default(context);
-        this.plugins.set(name, {
-            ...plugin,
-            context,
-            config: currentConfig,
-            enabled: true
-        });
-        context.emit('internal.ready', {
-            name: 'internal.ready',
-            data: {}
-        });
+        try {
+            await plugin.module.default(context);
+            this.plugins.set(name, {
+                ...plugin,
+                context,
+                config: currentConfig,
+                enabled: true
+            });
+            await context.start();
+        } catch (error) {
+            await context.dispose();
+            this.plugins.set(name, {
+                ...plugin,
+                context: undefined,
+                config: undefined,
+                enabled: false
+            });
+            throw error;
+        }
         this.logger.log('plugin', 'info', `A ${name}`);
     }
 
-    dispose(name: string) {
+    async dispose(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
             this.logger.log('plugin', 'error', `Cannot dispose plugin ${name}: not found`);
@@ -110,16 +118,15 @@ export class PluginService {
             this.logger.log('plugin', 'error', `Plugin ${name} is not enabled, dispose skipped`);
             return;
         }
-        plugin.context!.emit('internal.dispose', {
-            name: 'internal.dispose',
-            data: {}
-        });
-        plugin.context!.dispose();
-        this.plugins.set(name, {
-            ...plugin,
-            enabled: false
-        });
-        this.logger.log('plugin', 'info', `D ${name}`);
+        try {
+            await plugin.context!.dispose();
+        } finally {
+            this.plugins.set(name, {
+                ...plugin,
+                enabled: false
+            });
+            this.logger.log('plugin', 'info', `D ${name}`);
+        }
     }
 
     remove(name: string) {
