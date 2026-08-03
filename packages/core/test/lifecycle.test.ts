@@ -3,6 +3,12 @@ import test from 'node:test';
 import { Lifecycle, LifecycleState } from '../src/lifecycle';
 import { PluginContext } from '../src/services/plugin/context';
 
+declare module '../src/services/plugin/types' {
+    interface Events {
+        'test.event': { value: string };
+    }
+}
+
 test('becomes active only after asynchronous startup completes', async () => {
     const lifecycle = new Lifecycle();
     let releaseStart!: () => void;
@@ -73,27 +79,88 @@ test('cleans up already-started resources when startup fails', async () => {
     assert.equal(lifecycle.state, LifecycleState.FAILED);
 });
 
-test('PluginContext emits lifecycle events before it removes plugin listeners', async () => {
-    const context = new PluginContext({}, new Map(), [], new Map());
+test('stops after startup when stop is requested while starting', async () => {
+    const lifecycle = new Lifecycle();
+    const calls: string[] = [];
+    let releaseStart!: () => void;
+    const startGate = new Promise<void>((resolve) => {
+        releaseStart = resolve;
+    });
+
+    lifecycle.onStart(async () => {
+        calls.push('start');
+        await startGate;
+        return () => {
+            calls.push('stop');
+        };
+    });
+
+    const starting = lifecycle.start();
+    const stopping = lifecycle.stop();
+    releaseStart();
+
+    await Promise.all([starting, stopping]);
+
+    assert.deepEqual(calls, ['start', 'stop']);
+    assert.equal(lifecycle.state, LifecycleState.STOPPED);
+});
+
+test('does not accept new stop handlers while stopping', async () => {
+    const lifecycle = new Lifecycle();
+    let releaseCleanup!: () => void;
+    const cleanupGate = new Promise<void>((resolve) => {
+        releaseCleanup = resolve;
+    });
+
+    lifecycle.onStop(async () => {
+        await cleanupGate;
+    });
+    await lifecycle.start();
+    const stopping = lifecycle.stop();
+
+    assert.throws(() => lifecycle.onStop(() => {}), /stopping/);
+    assert.throws(() => lifecycle.onBeforeStop(() => {}), /stopping/);
+
+    releaseCleanup();
+    await stopping;
+});
+
+test('PluginContext removes its business event listeners during disposal', async () => {
+    const sharedEvents = new Map();
+    const context = new PluginContext({}, new Map(), [], sharedEvents);
     const calls: string[] = [];
 
-    context.on('internal.ready', () => {
-        calls.push('ready');
-    });
-    context.on('internal.dispose', () => {
-        calls.push('dispose');
-    });
-    context.lifecycle.onStop(() => {
-        calls.push('cleanup');
-    });
-    context.on('custom.event' as never, () => {
-        calls.push('custom');
+    context.on('test.event', () => {
+        calls.push('event');
     });
 
     await context.start();
+    await context.emit('test.event', { name: 'test.event', data: { value: 'first' } });
     await context.dispose();
-    context.emit('custom.event' as never, {} as never);
+    const sibling = new PluginContext({}, new Map(), [], sharedEvents);
+    await sibling.emit('test.event', { name: 'test.event', data: { value: 'second' } });
 
-    assert.deepEqual(calls, ['ready', 'dispose', 'cleanup']);
+    assert.deepEqual(calls, ['event']);
     assert.equal(context.lifecycle.state, LifecycleState.STOPPED);
+});
+
+test('PluginContext waits for asynchronous business event listeners', async () => {
+    const context = new PluginContext({}, new Map(), [], new Map());
+    const calls: string[] = [];
+    let releaseEvent!: () => void;
+    const eventGate = new Promise<void>((resolve) => {
+        releaseEvent = resolve;
+    });
+
+    context.on('test.event', async () => {
+        calls.push('event');
+        await eventGate;
+    });
+
+    const emitting = context.emit('test.event', { name: 'test.event', data: { value: 'test' } });
+    assert.deepEqual(calls, ['event']);
+    releaseEvent();
+    await emitting;
+
+    assert.deepEqual(calls, ['event']);
 });
