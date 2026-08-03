@@ -83,6 +83,9 @@ test('PluginContext emits lifecycle events before it removes plugin listeners', 
     context.on('internal.dispose', () => {
         calls.push('dispose');
     });
+    context.lifecycle.onStop(() => {
+        calls.push('cleanup');
+    });
     context.on('custom.event' as never, () => {
         calls.push('custom');
     });
@@ -91,6 +94,6 @@ test('PluginContext emits lifecycle events before it removes plugin listeners', 
     await context.dispose();
     context.emit('custom.event' as never, {} as never);
 
-    assert.deepEqual(calls, ['ready', 'dispose']);
+    assert.deepEqual(calls, ['ready', 'dispose', 'cleanup']);
     assert.equal(context.lifecycle.state, LifecycleState.STOPPED);
 });
