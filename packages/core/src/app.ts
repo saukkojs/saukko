@@ -30,15 +30,23 @@ export class App {
     async stop() {
         this.logger.log('app', 'info', 'Stopping app...');
         const plugins = this.plugin.map();
+        const enabled = (name: string) => plugins.get(name)?.enabled === true;
+        // 停止顺序取启动拓扑顺序的逆序：依赖方先停止，与作用域“先子后父”的销毁顺序一致。
+        const diagnosis = pluginDependencyDiagnose(this.plugin, this.container);
+        const stopOrder = diagnosis.order.filter(enabled).reverse();
+        // 未进入启动序列（如有依赖问题被跳过）但已启用的插件，排在最后兜底停止。
+        for (const name of plugins.keys()) {
+            if (enabled(name) && !diagnosis.order.includes(name)) {
+                stopOrder.push(name);
+            }
+        }
         const errors: unknown[] = [];
-        for (const [name, plugin] of plugins) {
-            if (plugin.enabled) {
-                try {
-                    await this.plugin.dispose(name);
-                } catch (error) {
-                    errors.push(error);
-                    this.logger.log('app', 'error', `Failed to stop plugin ${name}.`, error);
-                }
+        for (const name of stopOrder) {
+            try {
+                await this.plugin.dispose(name);
+            } catch (error) {
+                errors.push(error);
+                this.logger.log('app', 'error', `Failed to stop plugin ${name}.`, error);
             }
         }
         this.logger.log('app', 'info', 'App stopped.');
