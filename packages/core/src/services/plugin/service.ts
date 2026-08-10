@@ -1,5 +1,5 @@
 import { Container, ServiceRegistry } from "../../container";
-import { createScope, Scope } from "../../scope";
+import { createContainerScope, Scope } from "../../scope";
 import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { Bot } from "./bot";
@@ -27,13 +27,15 @@ export class PluginService {
     private plugins = new Map<string, PluginMapItem>();
     private bots: Array<Bot> = [];
     private sharedEventListeners = new Map<string, EventListener<keyof Events>[]>();
-    private readonly rootScope: Scope = createScope();
+    private readonly rootScope: Scope;
 
     constructor(
         private container: Container,
         private logger: LoggerService,
         private config: ConfigService
-    ) { }
+    ) {
+        this.rootScope = createContainerScope(container);
+    }
 
     install(pluginModule: PluginType) {
         if (this.plugins.has(pluginModule.name)) {

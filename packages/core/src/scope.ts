@@ -227,3 +227,40 @@ export function createScope(parent?: Scope): Scope {
     }
     return new ScopeNode(parent);
 }
+
+/**
+ * `createContainerScope` 所需的最低容器接口（结构化类型）。
+ * stable 的 `Container` 天然满足该接口；定义它是为了让 scope 模块不反向依赖 container。
+ */
+export interface ContainerLike {
+    has(name: string): boolean;
+    get(name: string): unknown;
+}
+
+/**
+ * 衔接 stable `Container` 的兼容根作用域（0.2 过渡空壳）。
+ *
+ * `get`/`has` 先查自身登记与父链，未命中时委托给容器；
+ * 自身或子作用域的同名登记按常规遮蔽规则覆盖容器值。
+ * 容器的惰性实例化与循环检测保持不变；本适配层不做生命周期管理。
+ */
+class ContainerScopeNode extends ScopeNode {
+    constructor(private readonly container: ContainerLike) {
+        super(undefined);
+    }
+
+    has(name: string): boolean {
+        return super.has(name) || this.container.has(name);
+    }
+
+    get<T = unknown>(name: string): T | undefined {
+        if (super.has(name)) return super.get<T>(name);
+        if (this.container.has(name)) return this.container.get(name) as T;
+        return undefined;
+    }
+}
+
+/** 创建一个以容器为后备读取来源的根作用域。 */
+export function createContainerScope(container: ContainerLike): Scope {
+    return new ContainerScopeNode(container);
+}

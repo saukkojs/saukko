@@ -8,7 +8,9 @@ import { PluginContext, PluginService } from '../src/services/plugin';
 
 function createPluginService() {
     return new PluginService(
-        { has: () => true, get: () => undefined } as unknown as Container,
+        // 空容器 mock：辅助函数安装的插件均不声明 inject，无需容器服务。
+        // has 必须如实返回 false，否则容器后备会污染作用域链上的 has 判断。
+        { has: () => false, get: () => undefined } as unknown as Container,
         { log: () => {} } as unknown as LoggerService,
         { get: () => undefined } as unknown as ConfigService,
     );
@@ -101,7 +103,7 @@ test('a failed uninstall keeps a disabled plugin available for a retry', async (
     assert.equal(cleanupAttempts, 1);
 });
 
-test('an applied plugin reads injected services through its child scope, isolated from siblings', async () => {
+test('an applied plugin reads injected services through its child scope; undeclared services stay readable via the parent chain', async () => {
     const services: Record<string, unknown> = { storage: { kind: 'storage' } };
     const service = new PluginService(
         { has: (name: string) => name in services, get: (name: string) => services[name] } as unknown as Container,
@@ -129,7 +131,9 @@ test('an applied plugin reads injected services through its child scope, isolate
 
     assert.equal(consumer.get('storage'), services.storage);
     assert.equal(consumer.has('storage'), true);
-    assert.equal(bystander.has('storage'), false);
+    // 未声明 inject 的插件也可沿父链读取容器服务（全量可读语义）；
+    // 归属隔离由“插件自有登记”用例覆盖。
+    assert.equal(bystander.get('storage'), services.storage);
     // 兼容的 dependencies 记录保持不变。
     assert.equal((consumer.dependencies as Record<string, unknown>).storage, services.storage);
 });
