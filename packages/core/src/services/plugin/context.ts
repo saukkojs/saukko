@@ -3,7 +3,6 @@ import { PluginDependenciesRegistry, Events, Event, EventListener } from "./type
 import { Context, Scope } from "../../scope";
 
 export class PluginContext implements Context {
-    private disposers: Array<() => void> = [];
     private disposed = false;
 
     constructor(
@@ -15,9 +14,6 @@ export class PluginContext implements Context {
     ) {
         this.lifecycle.onStop(() => {
             this.disposed = true;
-            for (const dispose of this.disposers.splice(0).reverse()) {
-                dispose();
-            }
         });
     }
 
@@ -59,8 +55,13 @@ export class PluginContext implements Context {
         this.sharedEventListeners.get(event as string)!.push(listener as EventListener<keyof Events>);
 
         const dispose = this.disposeGenerator(event, listener);
-        this.disposers.push(dispose);
-        return dispose;
+        // 监听清理直接绑定到子作用域的生命周期：
+        // 作用域停止时按注册逆序自动移除监听，无需额外的私有清理列表。
+        const unbind = this.lifecycle.onStop(dispose);
+        return () => {
+            unbind();
+            dispose();
+        };
     }
 
     off<T extends keyof Events>(event: T, listener: EventListener<T>) {

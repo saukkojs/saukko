@@ -89,6 +89,11 @@ export class PluginService {
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
         const currentConfig = pluginConfig[name] || {};
         const scope = this.rootScope.fork();
+        // 注入的服务登记到插件的子作用域：插件通过 `context.get()` 沿作用域链读取，
+        // 兄弟插件不可见，插件卸载时随子作用域一并释放。
+        for (const [dep, service] of Object.entries(injections)) {
+            scope.set(dep, service);
+        }
         const context = new PluginContext(scope, injections, currentConfig, this.bots, this.sharedEventListeners);
         try {
             await plugin.module.default(context);

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Container } from '../src/container';
+import { LifecycleState } from '../src/lifecycle';
 import type { ConfigService } from '../src/services/config';
 import type { LoggerService } from '../src/services/logger';
-import { PluginService } from '../src/services/plugin';
+import { PluginContext, PluginService } from '../src/services/plugin';
 
 function createPluginService() {
     return new PluginService(
@@ -98,4 +99,82 @@ test('a failed uninstall keeps a disabled plugin available for a retry', async (
     await service.remove('failing-cleanup');
     assert.equal(service.map().has('failing-cleanup'), false);
     assert.equal(cleanupAttempts, 1);
+});
+
+test('an applied plugin reads injected services through its child scope, isolated from siblings', async () => {
+    const services: Record<string, unknown> = { storage: { kind: 'storage' } };
+    const service = new PluginService(
+        { has: (name: string) => name in services, get: (name: string) => services[name] } as unknown as Container,
+        { log: () => {} } as unknown as LoggerService,
+        { get: () => undefined } as unknown as ConfigService,
+    );
+    let consumer!: PluginContext;
+    let bystander!: PluginContext;
+    service.install({
+        name: 'consumer',
+        inject: ['storage'],
+        default: (context) => {
+            consumer = context;
+        },
+    });
+    service.install({
+        name: 'bystander',
+        default: (context) => {
+            bystander = context;
+        },
+    });
+
+    await service.apply('consumer');
+    await service.apply('bystander');
+
+    assert.equal(consumer.get('storage'), services.storage);
+    assert.equal(consumer.has('storage'), true);
+    assert.equal(bystander.has('storage'), false);
+    // 兼容的 dependencies 记录保持不变。
+    assert.equal((consumer.dependencies as Record<string, unknown>).storage, services.storage);
+});
+
+test('plugin scope registrations belong to the plugin scope and are released with it', async () => {
+    const service = createPluginService();
+    let owner!: PluginContext;
+    let bystander!: PluginContext;
+    service.install({
+        name: 'owner',
+        default: (context) => {
+            owner = context;
+            context.set('custom', 42);
+        },
+    });
+    service.install({
+        name: 'bystander',
+        default: (context) => {
+            bystander = context;
+        },
+    });
+    await service.apply('owner');
+    await service.apply('bystander');
+
+    assert.equal(owner.get('custom'), 42);
+    assert.equal(bystander.has('custom'), false);
+
+    await service.dispose('owner');
+    assert.equal(owner.scope.lifecycle.state, LifecycleState.STOPPED);
+    assert.throws(() => owner.set('late', 1), /disposed/);
+    // 兄弟插件的作用域不受波及。
+    assert.equal(bystander.scope.lifecycle.state, LifecycleState.ACTIVE);
+});
+
+test('registering an event listener while the plugin scope is stopping is rejected', async () => {
+    const service = createPluginService();
+    service.install({
+        name: 'late-listener',
+        default: (context) => {
+            context.lifecycle.onStop(() => {
+                context.on('test.event' as never, () => {});
+            });
+        },
+    });
+    await service.apply('late-listener');
+
+    await assert.rejects(service.dispose('late-listener'), /Cannot register a cleanup handler/);
 });
