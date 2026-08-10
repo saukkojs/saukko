@@ -1,4 +1,5 @@
 import { Container, ServiceRegistry } from "../../container";
+import { createScope, Scope } from "../../scope";
 import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { Bot } from "./bot";
@@ -26,6 +27,7 @@ export class PluginService {
     private plugins = new Map<string, PluginMapItem>();
     private bots: Array<Bot> = [];
     private sharedEventListeners = new Map<string, EventListener<keyof Events>[]>();
+    private readonly rootScope: Scope = createScope();
 
     constructor(
         private container: Container,
@@ -86,7 +88,8 @@ export class PluginService {
         }
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
         const currentConfig = pluginConfig[name] || {};
-        const context = new PluginContext(injections, currentConfig, this.bots, this.sharedEventListeners);
+        const scope = this.rootScope.fork();
+        const context = new PluginContext(scope, injections, currentConfig, this.bots, this.sharedEventListeners);
         try {
             await plugin.module.default(context);
             this.plugins.set(name, {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Lifecycle, LifecycleState } from '../src/lifecycle';
+import { createScope } from '../src/scope';
 import { PluginContext } from '../src/services/plugin/context';
 
 declare module '../src/services/plugin/types' {
@@ -127,7 +128,7 @@ test('does not accept new stop handlers while stopping', async () => {
 
 test('PluginContext removes its business event listeners during disposal', async () => {
     const sharedEvents = new Map();
-    const context = new PluginContext({}, new Map(), [], sharedEvents);
+    const context = new PluginContext(createScope(), {}, new Map(), [], sharedEvents);
     const calls: string[] = [];
 
     context.on('test.event', () => {
@@ -137,7 +138,7 @@ test('PluginContext removes its business event listeners during disposal', async
     await context.start();
     context.emit('test.event', { name: 'test.event', data: { value: 'first' } });
     await context.dispose();
-    const sibling = new PluginContext({}, new Map(), [], sharedEvents);
+    const sibling = new PluginContext(createScope(), {}, new Map(), [], sharedEvents);
     sibling.emit('test.event', { name: 'test.event', data: { value: 'second' } });
 
     assert.deepEqual(calls, ['event']);
@@ -145,7 +146,7 @@ test('PluginContext removes its business event listeners during disposal', async
 });
 
 test('PluginContext dispatches business events synchronously', () => {
-    const context = new PluginContext({}, new Map(), [], new Map());
+    const context = new PluginContext(createScope(), {}, new Map(), [], new Map());
     const calls: string[] = [];
 
     context.on('test.event', () => {

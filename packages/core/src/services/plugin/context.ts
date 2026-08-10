@@ -1,13 +1,13 @@
 import { Bot } from "./bot";
 import { PluginDependenciesRegistry, Events, Event, EventListener } from "./types";
-import { Lifecycle } from "../../lifecycle";
+import { Context, Scope } from "../../scope";
 
-export class PluginContext {
+export class PluginContext implements Context {
     private disposers: Array<() => void> = [];
     private disposed = false;
-    public readonly lifecycle = new Lifecycle();
 
     constructor(
+        public readonly scope: Scope,
         public readonly dependencies: PluginDependenciesRegistry,
         public readonly config: Map<string, any>,
         public bots: Array<Bot>,
@@ -19,6 +19,22 @@ export class PluginContext {
                 dispose();
             }
         });
+    }
+
+    get lifecycle() {
+        return this.scope.lifecycle;
+    }
+
+    has(name: string) {
+        return this.scope.has(name);
+    }
+
+    get<T = unknown>(name: string): T | undefined {
+        return this.scope.get<T>(name);
+    }
+
+    set<T>(name: string, value: T) {
+        this.scope.set(name, value);
     }
 
     private disposeGenerator<T extends keyof Events>(event: T, listener: EventListener<T>) {
@@ -71,7 +87,7 @@ export class PluginContext {
     }
 
     dispose() {
-        return this.lifecycle.stop();
+        return this.scope.dispose();
     }
 
     mountBot(bot: Bot) {
