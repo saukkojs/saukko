@@ -33,6 +33,10 @@ export class PluginContext implements Context {
         this.scope.set(name, value);
     }
 
+    provide<T>(name: string, service: T) {
+        return this.scope.provide(name, service);
+    }
+
     private disposeGenerator<T extends keyof Events>(event: T, listener: EventListener<T>) {
         return () => {
             const listeners = this.sharedEventListeners.get(event as string);

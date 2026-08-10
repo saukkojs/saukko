@@ -1,4 +1,15 @@
-import { Lifecycle } from './lifecycle';
+import { Awaitable, Lifecycle, LifecycleState } from './lifecycle';
+
+/**
+ * 服务的生命周期约定（可选实现）。
+ *
+ * 通过 `Scope.provide` 登记的服务若实现本约定：
+ * `start` 随作用域生命周期的启动序列调用，`stop` 随停止序列调用（按登记逆序）。
+ */
+export interface ScopedService {
+    start?(): Awaitable<void>;
+    stop?(): Awaitable<void>;
+}
 
 /**
  * 作用域：Context 资源的归属单元，构成一棵显式的父子层级树。
@@ -29,9 +40,21 @@ export interface Scope {
 
     /**
      * 将资源登记到本作用域（覆盖本作用域的同名登记，不影响父作用域）。
+     * 纯登记、无副作用；需要生命周期管理的服务请使用 `provide`。
      * 作用域销毁后调用会抛错。
      */
     set<T>(name: string, value: T): void;
+
+    /**
+     * 登记一个服务（返回该服务）。服务实现 `ScopedService` 约定时：
+     * - `start` 挂到本作用域生命周期的启动序列；作用域已 ACTIVE 时登记则立即启动，
+     *   本方法等待启动完成后返回。
+     * - `stop` 挂到本作用域生命周期的停止序列，按登记逆序执行；
+     *   启动失败的服务不会收到 `stop`。
+     * 作用域生命周期为 STARTING/STOPPING/STOPPED/FAILED 时调用会抛错。
+     * 注意：同名覆盖登记时，旧服务已挂入生命周期的钩子不会移除。
+     */
+    provide<T>(name: string, service: T): Promise<T>;
 
     /**
      * 创建归属于本作用域的子作用域。
@@ -69,6 +92,9 @@ export interface Context {
 
     /** 委托给 `scope.set`；登记的资源归属于本 Context 绑定的作用域。 */
     set<T>(name: string, value: T): void;
+
+    /** 委托给 `scope.provide`；服务归属于本 Context 绑定的作用域。 */
+    provide<T>(name: string, service: T): Promise<T>;
 }
 
 /**
@@ -107,6 +133,41 @@ class ScopeNode implements Scope {
     set<T>(name: string, value: T): void {
         this.assertAlive('register a resource');
         this.resources.set(name, value);
+    }
+
+    async provide<T>(name: string, service: T): Promise<T> {
+        this.assertAlive('provide a service');
+        const state = this.lifecycle.state;
+        if (state !== LifecycleState.PENDING && state !== LifecycleState.ACTIVE) {
+            throw new Error(`Cannot provide a service while scope lifecycle is ${state}.`);
+        }
+        this.resources.set(name, service);
+
+        const hooks = service as ScopedService | null | undefined;
+        const hasStart = typeof hooks?.start === 'function';
+        const hasStop = typeof hooks?.stop === 'function';
+        if (!hasStart && !hasStop) return service;
+
+        // 没有 start 的服务视为“始终已启动”，保证 stop 一定会被调用。
+        let started = !hasStart;
+        const startService = async () => {
+            await hooks!.start!();
+            started = true;
+        };
+        const stopService = async () => {
+            if (!started || !hasStop) return;
+            started = false;
+            await hooks!.stop!();
+        };
+        if (hasStop) this.lifecycle.onStop(stopService);
+
+        if (state === LifecycleState.PENDING) {
+            if (hasStart) this.lifecycle.onStart(startService);
+            return service;
+        }
+        // 作用域已 ACTIVE：立即启动并等待完成。
+        if (hasStart) await startService();
+        return service;
     }
 
     fork(): Scope {

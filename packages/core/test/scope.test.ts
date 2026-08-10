@@ -115,3 +115,120 @@ test('createScope rejects a foreign parent implementation', () => {
     };
     assert.throws(() => createScope(foreign as never), /createScope/);
 });
+
+test('provided services start with the scope lifecycle and stop in reverse registration order', async () => {
+    const root = createScope();
+    const calls: string[] = [];
+    const make = (name: string) => ({
+        start: async () => {
+            calls.push(`start-${name}`);
+        },
+        stop: async () => {
+            calls.push(`stop-${name}`);
+        },
+    });
+
+    await root.provide('first', make('first'));
+    await root.provide('second', make('second'));
+    assert.deepEqual(calls, []);
+
+    await root.lifecycle.start();
+    assert.deepEqual(calls, ['start-first', 'start-second']);
+
+    await root.dispose();
+    assert.deepEqual(calls, ['start-first', 'start-second', 'stop-second', 'stop-first']);
+});
+
+test('providing a service on an active scope starts it immediately and awaits completion', async () => {
+    const root = createScope();
+    await root.lifecycle.start();
+
+    let releaseStart!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        releaseStart = resolve;
+    });
+    const calls: string[] = [];
+    const service = {
+        start: async () => {
+            calls.push('starting');
+            await gate;
+            calls.push('started');
+        },
+        stop: async () => {
+            calls.push('stopped');
+        },
+    };
+
+    const provided = root.provide('late', service);
+    let resolved = false;
+    void provided.then(() => {
+        resolved = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['starting']);
+    assert.equal(resolved, false);
+
+    releaseStart();
+    assert.equal(await provided, service);
+    assert.deepEqual(calls, ['starting', 'started']);
+
+    await root.dispose();
+    assert.deepEqual(calls, ['starting', 'started', 'stopped']);
+});
+
+test('a service whose start fails does not receive stop, earlier services still stop', async () => {
+    const root = createScope();
+    const calls: string[] = [];
+
+    await root.provide('healthy', {
+        start: async () => {
+            calls.push('start-healthy');
+        },
+        stop: async () => {
+            calls.push('stop-healthy');
+        },
+    });
+    await root.provide('broken', {
+        start: async () => {
+            calls.push('start-broken');
+            throw new Error('start failed');
+        },
+        stop: async () => {
+            calls.push('stop-broken');
+        },
+    });
+
+    await assert.rejects(root.lifecycle.start(), /start failed/);
+    assert.deepEqual(calls, ['start-healthy', 'start-broken', 'stop-healthy']);
+});
+
+test('a stop-only service is stopped even if the scope never started', async () => {
+    const root = createScope();
+    const calls: string[] = [];
+    await root.provide('stop-only', {
+        stop: async () => {
+            calls.push('stopped');
+        },
+    });
+
+    await root.dispose();
+    assert.deepEqual(calls, ['stopped']);
+});
+
+test('providing a service while the scope lifecycle is starting is rejected', async () => {
+    const root = createScope();
+    let releaseStart!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        releaseStart = resolve;
+    });
+    root.lifecycle.onStart(async () => {
+        await gate;
+    });
+    const starting = root.lifecycle.start();
+
+    await assert.rejects(root.provide('late', {}), /Cannot provide a service/);
+
+    releaseStart();
+    await starting;
+    await root.dispose();
+});
