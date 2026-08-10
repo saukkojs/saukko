@@ -1,5 +1,5 @@
 import { Logger } from '@cocotais/logger';
-import { App, Config, Container, injectionProvider } from '@saukkojs/core';
+import { App, Config, Container, PluginService, Scope, createContainerScope, injectionProvider } from '@saukkojs/core';
 import toml from 'smol-toml';
 import fs from 'fs';
 import net from 'net';
@@ -48,14 +48,15 @@ async function main() {
 	logger.debug('import.meta', import.meta);
 
 	const container = new Container();
-	injectionProvider(container, config, { headless: false });
+	const rootScope = createContainerScope(container);
+	injectionProvider(rootScope, container, config, { headless: false });
 
-	const app = container.get('app');
-	const plugin = container.get('plugin');
+	const app = rootScope.get<App>('app')!;
+	const plugin = rootScope.get<PluginService>('plugin')!;
 
 	const servicesToLoad = await getServicePackages(config, logger);
 	for (const serviceModule of servicesToLoad) {
-		container.register(serviceModule.name, serviceModule.default);
+		rootScope.register(serviceModule.name, serviceModule.default);
 	}
 	logger.info('已装载 ', servicesToLoad.length, ' 个服务');
 
@@ -79,7 +80,7 @@ async function main() {
 				if (!raw) continue;
 				try {
 					const message = JSON.parse(raw) as DaemonMessage;
-					void handleMessage(message, socket, app, server, container);
+					void handleMessage(message, socket, app, server, rootScope);
 				} catch (error) {
 					const response: DaemonResponse = { ok: false, message: 'Invalid message format' };
 					socket.write(JSON.stringify(response) + '\n');
@@ -117,7 +118,7 @@ async function main() {
 	process.on('SIGTERM', stop);
 }
 
-async function handleMessage(message: DaemonMessage, socket: net.Socket, app: App, server: net.Server, container: Container) {
+async function handleMessage(message: DaemonMessage, socket: net.Socket, app: App, server: net.Server, scope: Scope) {
 	if (message.action === 'stop') {
 		const response: DaemonResponse = { ok: true, message: 'Daemon stopping' };
 		socket.write(JSON.stringify(response) + '\n');
@@ -144,7 +145,7 @@ async function handleMessage(message: DaemonMessage, socket: net.Socket, app: Ap
 
 		try {
 			if (command === 'plugin') {
-				const pluginService = container.get('plugin');
+				const pluginService = scope.get<PluginService>('plugin')!;
 				if (rest[0] === 'install') {
 					if (!rest[1]) {
 						throw new Error('缺少插件目录');
