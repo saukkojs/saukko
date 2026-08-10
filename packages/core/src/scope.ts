@@ -12,6 +12,16 @@ export interface ScopedService {
 }
 
 /**
+ * `Scope.register` 接受的服务目标：带可选静态 `inject` 声明的构造函数，或工厂函数。
+ * 构造函数的 `inject` 依赖在实例化时沿注册作用域的父链解析。
+ */
+export type ScopeServiceConstructor<T = unknown> = {
+    new (...args: any[]): T;
+    inject?: readonly string[];
+};
+export type ScopeServiceFactory<T = unknown> = ScopeServiceConstructor<T> | (() => T);
+
+/**
  * 作用域：Context 资源的归属单元，构成一棵显式的父子层级树。
  *
  * 语义约定：
@@ -57,6 +67,18 @@ export interface Scope {
     provide<T>(name: string, service: T): Promise<T>;
 
     /**
+     * 惰性注册一个服务（`Container.register` 的 Scope 对应 API）。
+     * 首次 `get` 时才实例化并缓存到本作用域；构造函数的 `inject` 依赖沿父链解析；
+     * 同作用域内的循环依赖会抛错。惰性实例不做生命周期管理，
+     * 需要 `start`/`stop` 约定的服务请使用 `provide`。
+     * 作用域销毁后调用会抛错。
+     */
+    register<T>(name: string, target: ScopeServiceFactory<T>): void;
+
+    /** 列出沿父链可见的全部登记名（`Container.list` 的 Scope 对应 API，含容器后备）。 */
+    list(): string[];
+
+    /**
      * 创建归属于本作用域的子作用域。
      * 子作用域随父作用域销毁而销毁，且先于父作用域自身的生命周期清理。
      * 作用域销毁后调用会抛错。
@@ -95,6 +117,12 @@ export interface Context {
 
     /** 委托给 `scope.provide`；服务归属于本 Context 绑定的作用域。 */
     provide<T>(name: string, service: T): Promise<T>;
+
+    /** 委托给 `scope.register`；服务归属于本 Context 绑定的作用域。 */
+    register<T>(name: string, target: ScopeServiceFactory<T>): void;
+
+    /** 委托给 `scope.list`。 */
+    list(): string[];
 }
 
 /**
@@ -105,6 +133,8 @@ export interface Context {
  */
 class ScopeNode implements Scope {
     private readonly resources = new Map<string, unknown>();
+    private readonly factories = new Map<string, () => unknown>();
+    private readonly creating = new Set<string>();
     private readonly children: ScopeNode[] = [];
     private parentNode: ScopeNode | undefined;
     private disposeTask: Promise<void> | undefined;
@@ -121,18 +151,55 @@ class ScopeNode implements Scope {
     }
 
     has(name: string): boolean {
-        if (this.resources.has(name)) return true;
+        if (this.resources.has(name) || this.factories.has(name)) return true;
         return this.parentNode?.has(name) ?? false;
     }
 
     get<T = unknown>(name: string): T | undefined {
         if (this.resources.has(name)) return this.resources.get(name) as T;
+        if (this.factories.has(name)) return this.instantiate<T>(name);
         return this.parentNode?.get<T>(name);
+    }
+
+    list(): string[] {
+        const names = new Set<string>();
+        for (const name of this.resources.keys()) names.add(name);
+        for (const name of this.factories.keys()) names.add(name);
+        for (const name of this.parentNode?.list() ?? []) names.add(name);
+        return [...names];
     }
 
     set<T>(name: string, value: T): void {
         this.assertAlive('register a resource');
         this.resources.set(name, value);
+    }
+
+    register<T>(name: string, target: ScopeServiceFactory<T>): void {
+        this.assertAlive('register a service');
+        if (typeof target === 'function' && target.prototype) {
+            const Class = target as ScopeServiceConstructor<T>;
+            this.factories.set(name, () => {
+                const deps = Class.inject || [];
+                const injected = deps.map(dep => this.get(dep));
+                return new Class(...injected);
+            });
+        } else {
+            this.factories.set(name, target as () => T);
+        }
+    }
+
+    private instantiate<T>(name: string): T {
+        if (this.creating.has(name)) {
+            throw new Error(`Circular dependency detected: ${name}`);
+        }
+        this.creating.add(name);
+        try {
+            const instance = this.factories.get(name)!() as T;
+            this.resources.set(name, instance);
+            return instance;
+        } finally {
+            this.creating.delete(name);
+        }
     }
 
     async provide<T>(name: string, service: T): Promise<T> {
@@ -235,6 +302,7 @@ export function createScope(parent?: Scope): Scope {
 export interface ContainerLike {
     has(name: string): boolean;
     get(name: string): unknown;
+    list(): string[];
 }
 
 /**
@@ -257,6 +325,10 @@ class ContainerScopeNode extends ScopeNode {
         if (super.has(name)) return super.get<T>(name);
         if (this.container.has(name)) return this.container.get(name) as T;
         return undefined;
+    }
+
+    list(): string[] {
+        return [...new Set([...super.list(), ...this.container.list()])];
     }
 }
 

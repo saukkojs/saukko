@@ -1,6 +1,6 @@
 import { Bot } from "./bot";
 import { PluginDependenciesRegistry, Events, Event, EventListener } from "./types";
-import { Context, Scope } from "../../scope";
+import { Context, Scope, ScopeServiceFactory } from "../../scope";
 
 export class PluginContext implements Context {
     private disposed = false;
@@ -35,6 +35,14 @@ export class PluginContext implements Context {
 
     provide<T>(name: string, service: T) {
         return this.scope.provide(name, service);
+    }
+
+    register<T>(name: string, target: ScopeServiceFactory<T>) {
+        this.scope.register(name, target);
+    }
+
+    list() {
+        return this.scope.list();
     }
 
     private disposeGenerator<T extends keyof Events>(event: T, listener: EventListener<T>) {

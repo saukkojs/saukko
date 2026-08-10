@@ -1,25 +1,38 @@
 import { App } from "./app";
 import { Container } from "./container";
+import { Scope } from "./scope";
 import { ConfigService } from "./services/config";
 import { LoggerService } from "./services/logger";
 import { PluginService } from "./services/plugin";
 import { StorageService } from "./services/storage";
 import { Config } from "./types";
 
-export function injectionProvider(container: Container, config: Config, addition: {
+/**
+ * 将核心服务注册到应用根作用域。
+ *
+ * `container` 为 0.2 过渡期的兼容空壳：仅以 `container` 资源名登记进作用域，
+ * 供尚未迁移的代码（如 PluginService/App 的依赖声明）读取；新代码应直接使用 Scope API。
+ */
+export function injectionProvider(scope: Scope, container: Container, config: Config, addition: {
     headless?: boolean;
 }) {
-    container.register('container', () => container)
-    container.register('logger', LoggerService)
-    container.register('config', ConfigService)
+    scope.set('container', container)
+    scope.register('logger', LoggerService)
+    scope.register('config', ConfigService)
 
-    container.get('config').setConfig(config);
+    scope.get<ConfigService>('config')!.setConfig(config);
 
     if (addition.headless) return;
 
-    container.register('storage', StorageService)
-    container.register('plugin', PluginService)
-    container.register('app', App)
+    scope.register('storage', StorageService)
+    // PluginService 需要应用根作用域作为插件子作用域的父级，显式构造传入。
+    scope.register('plugin', () => new PluginService(
+        container,
+        scope.get<LoggerService>('logger')!,
+        scope.get<ConfigService>('config')!,
+        scope
+    ))
+    scope.register('app', App)
 }
 
 export interface PluginDependencyIssue {

@@ -32,9 +32,12 @@ export class PluginService {
     constructor(
         private container: Container,
         private logger: LoggerService,
-        private config: ConfigService
+        private config: ConfigService,
+        rootScope?: Scope
     ) {
-        this.rootScope = createContainerScope(container);
+        // 未显式传入时退化为仅衔接容器的空根（兼容旧用法）；
+        // 正常路径由 injectionProvider 传入应用根作用域。
+        this.rootScope = rootScope ?? createContainerScope(container);
     }
 
     install(pluginModule: PluginType) {
