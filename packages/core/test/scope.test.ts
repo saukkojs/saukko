@@ -310,3 +310,86 @@ test('register on a disposed scope is rejected', async () => {
     await root.dispose();
     assert.throws(() => root.register('late', () => ({})), /disposed/);
 });
+
+test('re-providing a service stops the old one and detaches its lifecycle hooks', async () => {
+    const root = createScope();
+    const events: string[] = [];
+    const makeService = (tag: string) => ({
+        start: () => { events.push(`start-${tag}`); },
+        stop: () => { events.push(`stop-${tag}`); },
+    });
+
+    await root.lifecycle.start();
+    await root.provide('svc', makeService('v1'));
+    assert.deepEqual(events, ['start-v1']);
+
+    // 覆盖：旧服务先停止，新服务立即启动。
+    await root.provide('svc', makeService('v2'));
+    assert.deepEqual(events, ['start-v1', 'stop-v1', 'start-v2']);
+
+    // 作用域销毁：旧服务的钩子已摘除，不会重复 stop；仅新服务收到停止。
+    await root.dispose();
+    assert.deepEqual(events, ['start-v1', 'stop-v1', 'start-v2', 'stop-v2']);
+});
+
+test('onReplace listeners run in registration order and are awaited by provide', async () => {
+    const root = createScope();
+    const events: string[] = [];
+    let releaseListener!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        releaseListener = resolve;
+    });
+
+    await root.provide('svc', { v: 1 });
+    root.onReplace('svc', async () => {
+        events.push('listener-1-enter');
+        await gate;
+        events.push('listener-1-exit');
+    });
+    root.onReplace('svc', async () => {
+        events.push('listener-2');
+    });
+
+    const providing = root.provide('svc', { v: 2 });
+    let settled = false;
+    void providing.then(() => {
+        settled = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(events, ['listener-1-enter']);
+    assert.equal(settled, false);
+
+    releaseListener();
+    await providing;
+    assert.deepEqual(events, ['listener-1-enter', 'listener-1-exit', 'listener-2']);
+    assert.equal(settled, true);
+});
+
+test('set and register overrides stay silent for onReplace listeners', async () => {
+    const root = createScope();
+    const calls: string[] = [];
+    root.onReplace('svc', (name) => {
+        calls.push(name);
+    });
+
+    root.set('svc', 1);
+    root.set('svc', 2);
+    root.register('svc', () => 3);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(calls, []);
+    await root.dispose();
+});
+
+test('a failing onReplace listener rejects the covering provide', async () => {
+    const root = createScope();
+    await root.provide('svc', { v: 1 });
+    root.onReplace('svc', () => {
+        throw new Error('linkage failed');
+    });
+
+    await assert.rejects(root.provide('svc', { v: 2 }), /linkage failed/);
+    // 服务本身已完成替换，失败只来自联动侧。
+    assert.deepEqual(root.get('svc'), { v: 2 });
+    await root.dispose();
+});

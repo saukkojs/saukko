@@ -62,9 +62,20 @@ export interface Scope {
      * - `stop` 挂到本作用域生命周期的停止序列，按登记逆序执行；
      *   启动失败的服务不会收到 `stop`。
      * 作用域生命周期为 STARTING/STOPPING/STOPPED/FAILED 时调用会抛错。
-     * 注意：同名覆盖登记时，旧服务已挂入生命周期的钩子不会移除。
+     *
+     * 覆盖本作用域的同名登记时（含遮蔽 `register` 的惰性注册）：
+     * 先摘除旧服务的生命周期钩子并等待其 `stop`，再登记新服务，
+     * 最后依次等待本作用域 `onReplace` 监听器完成（服务联动重启的挂载点）。
      */
     provide<T>(name: string, service: T): Promise<T>;
+
+    /**
+     * 监听本作用域指定资源的替换：`provide` 覆盖本作用域同名已登记资源时，
+     * 新服务就绪后按登记顺序逐个等待监听器完成。返回取消监听的函数。
+     * 仅 `provide` 触发；`set`/`register` 保持纯登记语义，不触发联动。
+     * 作用域销毁后监听自动失效。
+     */
+    onReplace(name: string, listener: (name: string) => Awaitable<void>): () => void;
 
     /**
      * 惰性注册一个服务（`Container.register` 的 Scope 对应 API）。
@@ -135,6 +146,12 @@ class ScopeNode implements Scope {
     private readonly resources = new Map<string, unknown>();
     private readonly factories = new Map<string, () => unknown>();
     private readonly creating = new Set<string>();
+    private readonly providedServices = new Map<string, {
+        stop: () => Promise<void>;
+        offStart?: () => void;
+        offStop?: () => void;
+    }>();
+    private readonly replaceListeners = new Map<string, Array<(name: string) => Awaitable<void>>>();
     private readonly children: ScopeNode[] = [];
     private parentNode: ScopeNode | undefined;
     private disposeTask: Promise<void> | undefined;
@@ -208,33 +225,81 @@ class ScopeNode implements Scope {
         if (state !== LifecycleState.PENDING && state !== LifecycleState.ACTIVE) {
             throw new Error(`Cannot provide a service while scope lifecycle is ${state}.`);
         }
+
+        const replacing = this.resources.has(name) || this.factories.has(name);
+        // 覆盖同名服务：先摘除旧服务的生命周期钩子并等待其停止，避免旧钩子在
+        // 作用域销毁时重复触发，也保证旧服务先于联动重启释放。
+        const previous = this.providedServices.get(name);
+        if (previous) {
+            previous.offStart?.();
+            previous.offStop?.();
+            this.providedServices.delete(name);
+            await previous.stop();
+        }
+        this.factories.delete(name);
         this.resources.set(name, service);
 
         const hooks = service as ScopedService | null | undefined;
         const hasStart = typeof hooks?.start === 'function';
         const hasStop = typeof hooks?.stop === 'function';
-        if (!hasStart && !hasStop) return service;
-
-        // 没有 start 的服务视为“始终已启动”，保证 stop 一定会被调用。
-        let started = !hasStart;
-        const startService = async () => {
-            await hooks!.start!();
-            started = true;
-        };
-        const stopService = async () => {
-            if (!started || !hasStop) return;
-            started = false;
-            await hooks!.stop!();
-        };
-        if (hasStop) this.lifecycle.onStop(stopService);
-
-        if (state === LifecycleState.PENDING) {
-            if (hasStart) this.lifecycle.onStart(startService);
-            return service;
+        if (hasStart || hasStop) {
+            // 没有 start 的服务视为“始终已启动”，保证 stop 一定会被调用。
+            let started = !hasStart;
+            const startService = async () => {
+                await hooks!.start!();
+                started = true;
+            };
+            const stopService = async () => {
+                if (!started || !hasStop) return;
+                started = false;
+                await hooks!.stop!();
+            };
+            const entry: {
+                stop: () => Promise<void>;
+                offStart?: () => void;
+                offStop?: () => void;
+            } = { stop: stopService };
+            if (hasStop) entry.offStop = this.lifecycle.onStop(stopService);
+            if (state === LifecycleState.PENDING) {
+                if (hasStart) entry.offStart = this.lifecycle.onStart(startService);
+            } else if (hasStart) {
+                // 作用域已 ACTIVE：立即启动并等待完成。
+                await startService();
+            }
+            this.providedServices.set(name, entry);
         }
-        // 作用域已 ACTIVE：立即启动并等待完成。
-        if (hasStart) await startService();
+
+        if (replacing) await this.notifyReplace(name);
         return service;
+    }
+
+    onReplace(name: string, listener: (name: string) => Awaitable<void>): () => void {
+        this.assertAlive('watch a service replacement');
+        let listeners = this.replaceListeners.get(name);
+        if (!listeners) {
+            listeners = [];
+            this.replaceListeners.set(name, listeners);
+        }
+        listeners.push(listener);
+        return () => {
+            const index = listeners.indexOf(listener);
+            if (index !== -1) listeners.splice(index, 1);
+        };
+    }
+
+    private async notifyReplace(name: string) {
+        const listeners = this.replaceListeners.get(name);
+        if (!listeners || listeners.length === 0) return;
+        const errors: unknown[] = [];
+        for (const listener of [...listeners]) {
+            try {
+                await listener(name);
+            } catch (error) {
+                errors.push(error);
+            }
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) throw new AggregateError(errors, 'Multiple service replacement listeners failed.');
     }
 
     fork(): Scope {
@@ -264,6 +329,8 @@ class ScopeNode implements Scope {
             errors.push(error);
         }
         this.resources.clear();
+        this.providedServices.clear();
+        this.replaceListeners.clear();
         this.detach();
         if (errors.length === 1) throw errors[0];
         if (errors.length > 1) throw new AggregateError(errors, 'Multiple scope cleanup handlers failed.');

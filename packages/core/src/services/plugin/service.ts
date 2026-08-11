@@ -1,5 +1,8 @@
 import { Container, ServiceRegistry } from "../../container";
 import { createContainerScope, Scope } from "../../scope";
+// 与 utils 存在模块级循环引用（utils 的 injectionProvider 构造 PluginService）；
+// pluginDependencyDiagnose 是函数声明，模块实例化阶段即完成提升，运行时调用安全。
+import { pluginDependencyDiagnose } from "../../utils";
 import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { Bot } from "./bot";
@@ -28,6 +31,7 @@ export class PluginService {
     private bots: Array<Bot> = [];
     private sharedEventListeners = new Map<string, EventListener<keyof Events>[]>();
     private readonly rootScope: Scope;
+    private readonly replaceWatchers = new Map<string, { count: number; off: () => void }>();
 
     constructor(
         private container: Container,
@@ -49,7 +53,8 @@ export class PluginService {
         const dependencies = pluginModule.inject || [];
         let missingDeps = [];
         for (const dep of dependencies) {
-            if (!(this.rootScope.has(dep))) {
+            // 依赖可以是作用域服务，也可以是已安装的插件（仅约束顺序）。
+            if (!(this.rootScope.has(dep)) && !(this.plugins.has(dep as string))) {
                 missingDeps.push(dep);
                 continue;
             }
@@ -64,6 +69,11 @@ export class PluginService {
             config: undefined,
             enabled: false
         });
+        // 监听插件声明的依赖：根作用域上同名服务被 provide 覆盖时联动重启。
+        // 插件名形式的依赖不会被 provide 触发，登记无害。
+        for (const dep of dependencies) {
+            this.watchDependency(dep as string);
+        }
         this.logger.log('plugin', 'info', `+ ${pluginModule.name}`);
     }
 
@@ -81,11 +91,13 @@ export class PluginService {
         const injections: Record<string, any> = {};
         let missingDeps = [];
         for (const dep of dependencies) {
-            if (!(this.rootScope.has(dep))) {
-                missingDeps.push(dep);
+            if (this.rootScope.has(dep)) {
+                injections[dep] = this.rootScope.get(dep);
                 continue;
             }
-            injections[dep] = this.rootScope.get(dep);
+            // 插件间依赖仅约束启动顺序，无服务实例可注入。
+            if (this.plugins.has(dep as string)) continue;
+            missingDeps.push(dep);
         }
         if (missingDeps.length > 0) {
             this.logger.log('plugin', 'error', `Cannot apply plugin ${name}: Dependency ${missingDeps.join(', ')} not found`);
@@ -152,8 +164,85 @@ export class PluginService {
         if (plugin.enabled) {
             await this.dispose(name);
         }
+        for (const dep of plugin.module.inject || []) {
+            this.unwatchDependency(dep as string);
+        }
         this.plugins.delete(name);
         this.logger.log('plugin', 'info', `- ${name}`);
+    }
+
+    private watchDependency(name: string) {
+        const existing = this.replaceWatchers.get(name);
+        if (existing) {
+            existing.count += 1;
+            return;
+        }
+        const off = this.rootScope.onReplace(name, (changed) => this.restartDependents(changed));
+        this.replaceWatchers.set(name, { count: 1, off });
+    }
+
+    private unwatchDependency(name: string) {
+        const existing = this.replaceWatchers.get(name);
+        if (!existing) return;
+        existing.count -= 1;
+        if (existing.count <= 0) {
+            existing.off();
+            this.replaceWatchers.delete(name);
+        }
+    }
+
+    /**
+     * 服务替换后的联动重启（吸收 main 的 rollback 理念，改为显式可等待实现）：
+     * 受影响集合为 inject 直接依赖该服务的插件，以及传递依赖这些插件的插件；
+     * 按依赖拓扑逆序停止、正序重启，全部完成后才返回。
+     * 诊断无效的插件保持停用；单个插件失败不阻断其余重启，最终汇总失败。
+     */
+    private async restartDependents(changed: string) {
+        const affected = new Set<string>();
+        let grew = true;
+        while (grew) {
+            grew = false;
+            for (const [name, plugin] of this.plugins) {
+                if (affected.has(name)) continue;
+                const deps = plugin.module.inject || [];
+                if (deps.some((dep) => dep === changed || affected.has(dep as string))) {
+                    affected.add(name);
+                    grew = true;
+                }
+            }
+        }
+
+        const enabled = (name: string) => this.plugins.get(name)?.enabled === true;
+        const restartOrder = pluginDependencyDiagnose(this, this.rootScope).order
+            .filter((name) => affected.has(name) && enabled(name));
+        const stopOrder = [...restartOrder].reverse();
+        // 诊断未入序列（如存在依赖问题）但已启用的受影响插件，排在最后兜底停止，
+        // 且不参与重启，保持停用状态。
+        for (const name of affected) {
+            if (enabled(name) && !restartOrder.includes(name)) {
+                stopOrder.push(name);
+            }
+        }
+
+        const errors: unknown[] = [];
+        for (const name of stopOrder) {
+            try {
+                await this.dispose(name);
+            } catch (error) {
+                errors.push(error);
+                this.logger.log('plugin', 'error', `Failed to stop plugin ${name} for service ${changed} replacement.`, error);
+            }
+        }
+        for (const name of restartOrder) {
+            try {
+                await this.apply(name);
+            } catch (error) {
+                errors.push(error);
+                this.logger.log('plugin', 'error', `Failed to restart plugin ${name} for service ${changed} replacement.`, error);
+            }
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) throw new AggregateError(errors, `Failed to restart plugins for service ${changed} replacement.`);
     }
 
     map() {
