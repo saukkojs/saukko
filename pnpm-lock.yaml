@@ -30,6 +30,15 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  .test:
+    dependencies:
+      '@saukkojs/core':
+        specifier: link:..\packages\core
+        version: link:../packages/core
+      saukko:
+        specifier: link:..\packages\saukko
+        version: link:../packages/saukko
+
   packages/core:
     dependencies:
       '@cocotais/logger':
