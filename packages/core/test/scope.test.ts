@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LifecycleState } from '../src/lifecycle';
-import { createContainerScope, createScope } from '../src/scope';
+import { createScope } from '../src/scope';
 import type { LoggerService } from '../src/services/logger';
 
 test('child scope reads fall back to the parent chain', () => {
@@ -234,30 +234,6 @@ test('providing a service while the scope lifecycle is starting is rejected', as
     await root.dispose();
 });
 
-test('container-backed scope falls back to the container and lets scope registrations shadow it', () => {
-    const containerService = { kind: 'container' };
-    const container = {
-        has: (name: string) => name === 'svc',
-        get: (name: string) => (name === 'svc' ? containerService : undefined),
-        list: () => ['svc'],
-    };
-    const root = createContainerScope(container);
-
-    assert.equal(root.get('svc'), containerService);
-    assert.equal(root.has('svc'), true);
-    assert.equal(root.has('missing'), false);
-
-    // 子作用域沿父链直达容器服务。
-    const child = root.fork();
-    assert.equal(child.get('svc'), containerService);
-
-    // 作用域登记按常规遮蔽规则覆盖容器值，容器本身不受影响。
-    const shadow = { kind: 'shadow' };
-    child.set('svc', shadow);
-    assert.equal(child.get('svc'), shadow);
-    assert.equal(root.get('svc'), containerService);
-});
-
 test('register instantiates lazily, caches, and resolves inject via the parent chain', () => {
     const root = createScope();
     root.set('greeting', 'hello');
@@ -291,19 +267,14 @@ test('register detects circular dependencies within the same scope', () => {
     assert.throws(() => root.get('a'), /Circular dependency detected: a/);
 });
 
-test('list merges own registrations, ancestors and the container fallback', () => {
-    const container = {
-        has: () => false,
-        get: () => undefined,
-        list: () => ['from-container'],
-    };
-    const root = createContainerScope(container);
+test('list merges own registrations and ancestors', () => {
+    const root = createScope();
     root.set('from-root', 1);
     const child = root.fork();
     child.register('from-child', () => ({}));
 
-    assert.deepEqual(child.list().sort(), ['from-child', 'from-container', 'from-root']);
-    assert.deepEqual(root.list().sort(), ['from-container', 'from-root']);
+    assert.deepEqual(child.list().sort(), ['from-child', 'from-root']);
+    assert.deepEqual(root.list(), ['from-root']);
 });
 
 test('register on a disposed scope is rejected', async () => {

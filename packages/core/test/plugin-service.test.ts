@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Container } from '../src/container';
 import { LifecycleState } from '../src/lifecycle';
 import { createScope } from '../src/scope';
 import type { ConfigService } from '../src/services/config';
@@ -9,9 +8,7 @@ import { PluginContext, PluginService } from '../src/services/plugin';
 
 function createPluginService() {
     return new PluginService(
-        // 空容器 mock：辅助函数安装的插件均不声明 inject，无需容器服务。
-        // has 必须如实返回 false，否则容器后备会污染作用域链上的 has 判断。
-        { has: () => false, get: () => undefined } as unknown as Container,
+        // 缺省根作用域：辅助函数安装的插件均不声明 inject，无需外部服务。
         { log: () => {} } as unknown as LoggerService,
         { get: () => undefined } as unknown as ConfigService,
     );
@@ -106,10 +103,12 @@ test('a failed uninstall keeps a disabled plugin available for a retry', async (
 
 test('an applied plugin reads injected services through its child scope; undeclared services stay readable via the parent chain', async () => {
     const services: Record<string, unknown> = { storage: { kind: 'storage' } };
+    const rootScope = createScope();
+    rootScope.set('storage', services.storage);
     const service = new PluginService(
-        { has: (name: string) => name in services, get: (name: string) => services[name] } as unknown as Container,
         { log: () => {} } as unknown as LoggerService,
         { get: () => undefined } as unknown as ConfigService,
+        rootScope
     );
     let consumer!: PluginContext;
     let bystander!: PluginContext;
@@ -132,7 +131,7 @@ test('an applied plugin reads injected services through its child scope; undecla
 
     assert.equal(consumer.get('storage'), services.storage);
     assert.equal(consumer.has('storage'), true);
-    // 未声明 inject 的插件也可沿父链读取容器服务（全量可读语义）；
+    // 未声明 inject 的插件也可沿父链读取根作用域服务（全量可读语义）；
     // 归属隔离由“插件自有登记”用例覆盖。
     assert.equal(bystander.get('storage'), services.storage);
     // 兼容的 dependencies 记录保持不变。
@@ -188,7 +187,6 @@ test('plugins can be installed as functions, classes or apply-objects', async ()
     const rootScope = createScope();
     rootScope.set('token', 'T');
     const service = new PluginService(
-        { has: () => false, get: () => undefined, list: () => [] } as unknown as Container,
         { log: () => {} } as unknown as LoggerService,
         { get: () => undefined } as unknown as ConfigService,
         rootScope

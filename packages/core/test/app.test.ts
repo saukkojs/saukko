@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { App } from '../src/app';
-import type { Container } from '../src/container';
 import { LifecycleState } from '../src/lifecycle';
-import { createContainerScope, type Scope } from '../src/scope';
+import { createScope, type Scope } from '../src/scope';
 import type { ConfigService } from '../src/services/config';
 import type { LoggerService } from '../src/services/logger';
 import { PluginContext, PluginService } from '../src/services/plugin';
@@ -36,15 +35,11 @@ test('App stops every enabled plugin when one plugin cleanup fails', async () =>
 test('App stops plugins in reverse dependency order and disposes their scopes', async () => {
     const stopped: string[] = [];
     const contexts = new Map<string, PluginContext>();
-    const container = {
-        has: () => true,
-        get: () => undefined,
-        list: () => [],
-    } as unknown as Container;
+    const rootScope = createScope();
     const plugin = new PluginService(
-        container,
         { log: () => {} } as unknown as LoggerService,
         { get: () => undefined } as unknown as ConfigService,
+        rootScope
     );
     // 故意打乱安装顺序，依赖链为 top -> mid -> base。
     for (const [name, inject] of [['top', ['mid']], ['base', []], ['mid', ['base']]] as const) {
@@ -59,7 +54,7 @@ test('App stops plugins in reverse dependency order and disposes their scopes', 
             },
         });
     }
-    const app = new App({ log: () => {} } as unknown as LoggerService, plugin, createContainerScope(container));
+    const app = new App({ log: () => {} } as unknown as LoggerService, plugin, rootScope);
 
     await app.start();
     await app.stop();

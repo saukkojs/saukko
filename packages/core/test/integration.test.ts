@@ -5,9 +5,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { App } from '../src/app';
-import { Container } from '../src/container';
 import { LifecycleState } from '../src/lifecycle';
-import { createContainerScope } from '../src/scope';
+import { createScope } from '../src/scope';
 import { PluginContext, PluginService } from '../src/services/plugin';
 import type { Config } from '../src/types';
 import { injectionProvider } from '../src/utils';
@@ -24,11 +23,10 @@ function createConfig(storagePath: string): Config {
     };
 }
 
-/** 与 daemon 相同的装配路径：容器空壳 + 容器后备根作用域 + injectionProvider。 */
+/** 与 daemon 相同的装配路径：根作用域 + injectionProvider。 */
 function assemble(config: Config) {
-    const container = new Container();
-    const rootScope = createContainerScope(container);
-    injectionProvider(rootScope, container, config, { headless: false });
+    const rootScope = createScope();
+    injectionProvider(rootScope, config, { headless: false });
     return {
         rootScope,
         app: rootScope.get<App>('app')!,

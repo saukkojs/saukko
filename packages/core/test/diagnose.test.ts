@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Container } from '../src/container';
-import { createContainerScope, createScope, type Scope } from '../src/scope';
+import { createScope, type Scope } from '../src/scope';
 import type { ConfigService } from '../src/services/config';
 import type { LoggerService } from '../src/services/logger';
 import { PluginService } from '../src/services/plugin';
@@ -9,8 +8,6 @@ import { pluginDependencyDiagnose } from '../src/utils';
 
 function createPluginService(rootScope: Scope) {
     return new PluginService(
-        // 空容器后备：服务可见性完全由传入的根作用域决定。
-        { has: () => false, get: () => undefined, list: () => [] } as unknown as Container,
         { log: () => {} } as unknown as LoggerService,
         { get: () => undefined } as unknown as ConfigService,
         rootScope
@@ -18,7 +15,7 @@ function createPluginService(rootScope: Scope) {
 }
 
 test('diagnosis resolves service dependencies against the scope registry', () => {
-    const scope = createContainerScope({ has: () => false, get: () => undefined, list: () => [] });
+    const scope = createScope();
     scope.register('svc', () => ({ kind: 'svc' }));
     const plugin = createPluginService(scope);
     plugin.install({ name: 'uses-svc', inject: ['svc'], default: () => {} });
@@ -35,7 +32,7 @@ test('diagnosis resolves service dependencies against the scope registry', () =>
 });
 
 test('re-diagnosing after a dynamic service registration clears the missing dependency', async () => {
-    const scope = createContainerScope({ has: () => false, get: () => undefined, list: () => [] });
+    const scope = createScope();
     const plugin = createPluginService(scope);
     let injected: unknown;
     plugin.install({

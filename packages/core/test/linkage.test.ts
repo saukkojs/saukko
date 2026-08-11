@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Container } from '../src/container';
 import { LifecycleState } from '../src/lifecycle';
 import { createScope } from '../src/scope';
 import type { ConfigService } from '../src/services/config';
@@ -10,7 +9,6 @@ import { PluginContext, PluginService } from '../src/services/plugin';
 function createSetup() {
     const rootScope = createScope();
     const service = new PluginService(
-        { has: () => false, get: () => undefined, list: () => [] } as unknown as Container,
         { log: () => {} } as unknown as LoggerService,
         { get: () => undefined } as unknown as ConfigService,
         rootScope
