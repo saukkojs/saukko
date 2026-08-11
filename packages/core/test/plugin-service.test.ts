@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Container } from '../src/container';
 import { LifecycleState } from '../src/lifecycle';
+import { createScope } from '../src/scope';
 import type { ConfigService } from '../src/services/config';
 import type { LoggerService } from '../src/services/logger';
 import { PluginContext, PluginService } from '../src/services/plugin';
@@ -181,4 +182,61 @@ test('registering an event listener while the plugin scope is stopping is reject
     await service.apply('late-listener');
 
     await assert.rejects(service.dispose('late-listener'), /Cannot register a cleanup handler/);
+});
+
+test('plugins can be installed as functions, classes or apply-objects', async () => {
+    const rootScope = createScope();
+    rootScope.set('token', 'T');
+    const service = new PluginService(
+        { has: () => false, get: () => undefined, list: () => [] } as unknown as Container,
+        { log: () => {} } as unknown as LoggerService,
+        { get: () => undefined } as unknown as ConfigService,
+        rootScope
+    );
+    const mounted: string[] = [];
+
+    // 函数形态：函数名即插件名，inject 作为函数属性声明。
+    function functionPlugin(context: PluginContext) {
+        mounted.push(`function:${context.get('token')}`);
+    }
+    Object.assign(functionPlugin, { inject: ['token'] });
+
+    // 类形态：实例化即完成挂载。
+    class ClassPlugin {
+        constructor(context: PluginContext) {
+            mounted.push(`class:${context.get('token')}`);
+        }
+    }
+
+    // 对象形态：name 属性 + apply 方法。
+    const objectPlugin = {
+        name: 'object-plugin',
+        apply(context: PluginContext) {
+            mounted.push(`object:${context.get('token')}`);
+        },
+    };
+
+    service.install(functionPlugin);
+    service.install(ClassPlugin);
+    service.install(objectPlugin);
+
+    await service.apply('functionPlugin');
+    await service.apply('ClassPlugin');
+    await service.apply('object-plugin');
+
+    assert.deepEqual(mounted, ['function:T', 'class:T', 'object:T']);
+    assert.equal(service.map().get('functionPlugin')?.enabled, true);
+    assert.equal(service.map().get('ClassPlugin')?.enabled, true);
+    assert.equal(service.map().get('object-plugin')?.enabled, true);
+
+    await rootScope.dispose();
+});
+
+test('plugins without a resolvable name or in an invalid shape are rejected', () => {
+    const service = createPluginService();
+
+    assert.throws(() => service.install((() => {}) as never), /匿名函数/);
+    assert.throws(() => service.install({ default: () => {} } as never), /模块形态需提供 name/);
+    assert.throws(() => service.install({ apply: () => {} } as never), /对象形态需提供 name/);
+    assert.throws(() => service.install(42 as never), /插件格式不正确/);
 });

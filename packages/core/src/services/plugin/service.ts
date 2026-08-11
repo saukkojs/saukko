@@ -11,11 +11,39 @@ import { EventListener, Events } from "./types";
 
 type AsyncAble<T> = T | Promise<T>;
 
+/** 插件的执行体：接收插件 Context，可异步。 */
+export type PluginApply = (context: PluginContext) => AsyncAble<void>;
+
+/**
+ * 插件的主路径形态：`{ name, default }` 模块。
+ * daemon 的包加载器（loader）只接受该形态。
+ */
 export interface PluginType {
     inject?: readonly (keyof ServiceRegistry)[];
     name: string;
-    default: (context: PluginContext) => AsyncAble<void>;
+    default: PluginApply;
 }
+
+/** 函数形态：函数名即插件名，`inject` 作为函数的可选属性声明。 */
+export type PluginFunction = PluginApply & {
+    inject?: readonly (keyof ServiceRegistry)[];
+};
+
+/** 类形态：类名即插件名，挂载时以插件 Context 实例化（实例化即完成挂载）。 */
+export type PluginClass = {
+    new (context: PluginContext): void;
+    inject?: readonly (keyof ServiceRegistry)[];
+};
+
+/** 对象形态：含 `apply` 方法；`name` 缺省时回退到 `apply` 的函数名。 */
+export interface PluginObject {
+    inject?: readonly (keyof ServiceRegistry)[];
+    name?: string;
+    apply: PluginApply;
+}
+
+/** `PluginService.install` 接受的全部插件形态。 */
+export type PluginLike = PluginType | PluginFunction | PluginClass | PluginObject;
 
 export interface PluginMapItem {
     name: string;
@@ -44,7 +72,8 @@ export class PluginService {
         this.rootScope = rootScope ?? createContainerScope(container);
     }
 
-    install(pluginModule: PluginType) {
+    install(plugin: PluginLike) {
+        const pluginModule = this.resolvePlugin(plugin);
         if (this.plugins.has(pluginModule.name)) {
             this.logger.log('plugin', 'error', `Plugin ${pluginModule.name} is already installed`);
             this.logger.log('plugin', 'notice', 'In current version, creating multiple instances for a plugin is not supported.');
@@ -75,6 +104,49 @@ export class PluginService {
             this.watchDependency(dep as string);
         }
         this.logger.log('plugin', 'info', `+ ${pluginModule.name}`);
+    }
+
+    /**
+     * 将多形态插件归一化为 `{ name, inject, default }` 模块形态（吸收自 main）。
+     * 名称解析：模块/对象形态取 `name` 属性，函数形态取函数名，类形态取类名；
+     * 无法解析出名称时抛错。匿名类表达式与匿名函数同样没有名称。
+     */
+    private resolvePlugin(plugin: PluginLike): PluginType {
+        if (typeof plugin === 'function') {
+            // 类形态：以 class 关键字声明的构造函数；经转译的 ES5 类无法识别，按函数处理。
+            if (/^class\s/.test(Function.prototype.toString.call(plugin))) {
+                const Class = plugin as unknown as PluginClass;
+                const resolved: PluginType = {
+                    name: Class.name,
+                    inject: Class.inject,
+                    default: (context) => {
+                        new Class(context);
+                    },
+                };
+                if (!resolved.name) throw new Error('插件缺少可解析的名称（匿名类）');
+                return resolved;
+            }
+            const fn = plugin as PluginFunction;
+            if (!fn.name) throw new Error('插件缺少可解析的名称（匿名函数）');
+            return { name: fn.name, inject: fn.inject, default: fn };
+        }
+        if (typeof plugin === 'object' && plugin !== null) {
+            if ('default' in plugin && typeof plugin.default === 'function') {
+                if (!plugin.name) throw new Error('插件缺少可解析的名称（模块形态需提供 name）');
+                return plugin as PluginType;
+            }
+            if ('apply' in plugin && typeof plugin.apply === 'function') {
+                const obj = plugin as PluginObject;
+                const name = obj.name ?? (obj.apply.name !== 'apply' ? obj.apply.name : undefined);
+                if (!name) throw new Error('插件缺少可解析的名称（对象形态需提供 name）');
+                return {
+                    name,
+                    inject: obj.inject,
+                    default: (context) => obj.apply(context),
+                };
+            }
+        }
+        throw new Error(`插件格式不正确：必须是 { name, default } 模块、函数、类或含 apply 方法的对象，得到 ${typeof plugin}`);
     }
 
     async apply(name: string) {
