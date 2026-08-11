@@ -1,6 +1,6 @@
 <div align="center"><a name="readme-top"></a>
 
-<img height="160" src="https://static.codemao.cn/coco/player/unstable/ryYpO7wja.image/png?hash=Fk5MB4bIWWoeu5uaE4GQ2VJM0L3o">
+<img height="160" src="https://cdn.cocotais.cn/saukko-logo-small.png">
 
 <h1>@saukkojs/core</h1>
 
