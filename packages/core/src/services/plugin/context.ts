@@ -19,7 +19,9 @@ export class PluginContext implements Context {
         public readonly dependencies: PluginDependenciesRegistry,
         public readonly config: Map<string, any>,
         public bots: Array<Bot>,
-        private sharedEventListeners: SharedEventListeners
+        private sharedEventListeners: SharedEventListeners,
+        /** 插件名：share 缺省服务名；由 PluginService 挂载时传入。 */
+        public readonly pluginName?: string
     ) {}
 
     get lifecycle() {
@@ -51,6 +53,22 @@ export class PluginContext implements Context {
 
     register<T>(name: string, target: ScopeServiceFactory<T>) {
         this.scope.register(name, target);
+    }
+
+    /**
+     * 将服务提升到根作用域（"服务即插件"）：缺省服务名为插件名；
+     * 显式不同名时消费方需分别声明依赖。详见 `Scope.share`。
+     */
+    share<T>(service: T): Promise<T>;
+    share<T>(name: string, service: T): Promise<T>;
+    share<T>(nameOrService: string | T, service?: T): Promise<T> {
+        if (typeof nameOrService === 'string') {
+            return this.scope.share(nameOrService, service as T);
+        }
+        if (!this.pluginName) {
+            throw new Error('Cannot share a service without an explicit name: the context is not bound to a plugin.');
+        }
+        return this.scope.share(this.pluginName, nameOrService);
     }
 
     list() {

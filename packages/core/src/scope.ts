@@ -88,6 +88,26 @@ export interface Scope {
     onReplace(name: string, listener: (name: string) => Awaitable<void>): () => void;
 
     /**
+     * 监听本作用域指定资源的移除：由 `share` 的摘除触发（区别于 `onReplace` 的替换），
+     * 摘除完成后按登记顺序逐个等待监听器完成。返回取消监听的函数。
+     * 作用域销毁后监听自动失效。
+     */
+    onRemove(name: string, listener: (name: string) => Awaitable<void>): () => void;
+
+    /**
+     * 将服务提升到根作用域，所有权归本作用域（"服务即插件"的对外提供路径）。
+     *
+     * - 登记立即生效：其他作用域沿父链即可读取，等待该名字的联动（`onAdd`）随本方法返回完成。
+     * - 服务实现 `ScopedService` 约定时：`start` 挂到本作用域生命周期的启动序列，
+     *   `stop` 挂到停止序列；本作用域已 ACTIVE 时登记则立即启动并等待完成。
+     * - 本作用域停止时：服务停止并**从根作用域摘除**（触发 `onRemove`）；
+     *   再次启动时重新登记（触发 `onAdd`）并启动。
+     * - 本作用域销毁时确保摘除，不残留。
+     * - 名称冲突：根作用域已有同名登记时抛错（不静默遮蔽）。
+     */
+    share<T>(name: string, service: T): Promise<T>;
+
+    /**
      * 惰性注册一个服务。
      * 首次 `get` 时才实例化并缓存到本作用域；构造函数的 `inject` 依赖沿父链解析；
      * 同作用域内的循环依赖会抛错。惰性实例不做生命周期管理，
@@ -143,6 +163,9 @@ export interface Context {
     /** 委托给 `scope.register`；服务归属于本 Context 绑定的作用域。 */
     register<T>(name: string, target: ScopeServiceFactory<T>): void;
 
+    /** 委托给 `scope.share`；服务提升到根作用域，所有权归本 Context 绑定的作用域。 */
+    share<T>(name: string, service: T): Promise<T>;
+
     /** 委托给 `scope.list`。 */
     list(): string[];
 }
@@ -164,6 +187,9 @@ class ScopeNode implements Scope {
     }>();
     private readonly addListeners = new Map<string, Array<(name: string) => Awaitable<void>>>();
     private readonly replaceListeners = new Map<string, Array<(name: string) => Awaitable<void>>>();
+    private readonly removeListeners = new Map<string, Array<(name: string) => Awaitable<void>>>();
+    /** 提升到根作用域的服务的属主（仅根作用域使用）：供摘除判定与防误删。 */
+    private readonly sharedOwners = new Map<string, ScopeNode>();
     private readonly children: ScopeNode[] = [];
     private parentNode: ScopeNode | undefined;
     private disposeTask: Promise<void> | undefined;
@@ -314,6 +340,85 @@ class ScopeNode implements Scope {
         };
     }
 
+    onRemove(name: string, listener: (name: string) => Awaitable<void>): () => void {
+        this.assertAlive('watch a service removal');
+        let listeners = this.removeListeners.get(name);
+        if (!listeners) {
+            listeners = [];
+            this.removeListeners.set(name, listeners);
+        }
+        listeners.push(listener);
+        return () => {
+            const index = listeners.indexOf(listener);
+            if (index !== -1) listeners.splice(index, 1);
+        };
+    }
+
+    async share<T>(name: string, service: T): Promise<T> {
+        this.assertAlive('share a service');
+        const root = this.rootNode();
+
+        const hooks = service as ScopedService | null | undefined;
+        const hasStart = typeof hooks?.start === 'function';
+        const hasStop = typeof hooks?.stop === 'function';
+        let started = false;
+        let registered = false;
+
+        const registerAtRoot = async () => {
+            if (root.resources.has(name) || root.factories.has(name)) {
+                throw new Error(`Cannot share service "${name}": the name is already registered in the root scope.`);
+            }
+            root.resources.set(name, service);
+            root.sharedOwners.set(name, this);
+            registered = true;
+            // 登记（含 disable 后的重新登记）视为新增：解除等待该服务的联动。
+            await root.notifyAdd(name);
+        };
+        const removeFromRoot = async () => {
+            // 防误删：仅当根作用域上的登记仍归属本作用域且未被覆盖时才摘除。
+            if (root.sharedOwners.get(name) === this && root.resources.get(name) === service) {
+                root.resources.delete(name);
+                root.sharedOwners.delete(name);
+                await root.notifyRemove(name);
+            }
+            registered = false;
+        };
+        const startService = async () => {
+            if (!registered) await registerAtRoot();
+            if (hasStart && !started) {
+                await hooks!.start!();
+                started = true;
+            }
+        };
+        const stopService = async () => {
+            if (started && hasStop) {
+                started = false;
+                await hooks!.stop!();
+            }
+            if (registered) await removeFromRoot();
+        };
+
+        // 初始登记先于钩子注册：登记失败（名称冲突）时不会留下悬挂钩子。
+        await registerAtRoot();
+        this.lifecycle.onStart(startService);
+        this.lifecycle.onStop(stopService);
+        this.lifecycle.onDispose(async () => {
+            // 作用域销毁时确保摘除（正常路径已被 stop 覆盖，此处兜底幂等）。
+            if (registered) await removeFromRoot();
+        });
+        // 作用域已 ACTIVE：当次周期补启动（后续周期由钩子驱动）。
+        if (this.lifecycle.state === LifecycleState.ACTIVE) {
+            await startService();
+        }
+        return service;
+    }
+
+    private rootNode(): ScopeNode {
+        let node: ScopeNode = this;
+        while (node.parentNode) node = node.parentNode;
+        return node;
+    }
+
     private async notifyAdd(name: string) {
         const listeners = this.addListeners.get(name);
         if (!listeners || listeners.length === 0) return;
@@ -342,6 +447,21 @@ class ScopeNode implements Scope {
         }
         if (errors.length === 1) throw errors[0];
         if (errors.length > 1) throw new AggregateError(errors, 'Multiple service replacement listeners failed.');
+    }
+
+    private async notifyRemove(name: string) {
+        const listeners = this.removeListeners.get(name);
+        if (!listeners || listeners.length === 0) return;
+        const errors: unknown[] = [];
+        for (const listener of [...listeners]) {
+            try {
+                await listener(name);
+            } catch (error) {
+                errors.push(error);
+            }
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) throw new AggregateError(errors, 'Multiple service removal listeners failed.');
     }
 
     fork(): Scope {
@@ -374,6 +494,8 @@ class ScopeNode implements Scope {
         this.providedServices.clear();
         this.addListeners.clear();
         this.replaceListeners.clear();
+        this.removeListeners.clear();
+        this.sharedOwners.clear();
         this.detach();
         if (errors.length === 1) throw errors[0];
         if (errors.length > 1) throw new AggregateError(errors, 'Multiple scope cleanup handlers failed.');

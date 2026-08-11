@@ -36,7 +36,7 @@ export class Lifecycle {
     public state = LifecycleState.PENDING;
 
     onStart(callback: LifecycleStart): () => void {
-        this.assertStartable('register a start handler');
+        this.assertHookRegistrable('register a start handler');
         this.starts.push(callback);
         return () => this.remove(this.starts, callback);
     }
@@ -182,6 +182,21 @@ export class Lifecycle {
             this.state !== LifecycleState.PENDING &&
             this.state !== LifecycleState.STOPPED &&
             this.state !== LifecycleState.FAILED
+        ) {
+            throw new Error(`Cannot ${operation} while lifecycle is ${this.state}.`);
+        }
+    }
+
+    /**
+     * 钩子注册的重入规则：STARTING/STOPPING 进行中与 DISPOSED 后拒绝；
+     * ACTIVE 中允许注册 start 钩子（当次周期不补触发，从下一周期起生效，
+     * 调用方如需当次生效应自行执行——见 Scope.share）。
+     */
+    private assertHookRegistrable(operation: string) {
+        if (
+            this.state === LifecycleState.STARTING ||
+            this.state === LifecycleState.STOPPING ||
+            this.state === LifecycleState.DISPOSED
         ) {
             throw new Error(`Cannot ${operation} while lifecycle is ${this.state}.`);
         }

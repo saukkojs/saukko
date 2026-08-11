@@ -140,7 +140,7 @@ export class PluginService {
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
         const currentConfig = pluginConfig[plugin.name] || {};
         const scope = this.rootScope.fork();
-        const context = new PluginContext(scope, injections, currentConfig, this.bots, this.sharedEventListeners);
+        const context = new PluginContext(scope, injections, currentConfig, this.bots, this.sharedEventListeners, plugin.name);
         try {
             await plugin.module.default(context);
         } catch (error) {
@@ -155,41 +155,67 @@ export class PluginService {
      * 依赖状态变化后的等待迁移：刷新全部插件的缺失清单，
      * 按诊断拓扑序执行就绪插件的挂起主体，并自动启动此前被标记为期望启用的插件。
      * 可等待；主体执行失败时摘除该插件记录（与 install 失败一致），失败汇总抛出。
+     *
+     * 可重入：插件主体经 `share` 提升服务会触发 onAdd 联动再次进入本方法，
+     * 嵌套调用仅登记一次追加扫描，由外层循环统一收尾。
      */
-    private async resolveWaiting() {
-        for (const plugin of this.plugins.values()) {
-            plugin.missing = this.computeMissing(plugin.module);
+    private resolveWaiting(): Promise<void> {
+        if (this.resolving) {
+            this.resolveQueued = true;
+            return Promise.resolve();
         }
-        // 诊断拓扑序只包含依赖就绪的插件：挂起主体的执行顺序同样服从拓扑。
-        const ready = pluginDependencyDiagnose(this, this.rootScope).order;
+        this.resolving = true;
+        return this.runResolveWaiting().finally(() => {
+            this.resolving = false;
+        });
+    }
+
+    private resolving = false;
+    private resolveQueued = false;
+
+    private async runResolveWaiting() {
         const errors: unknown[] = [];
-        for (const name of ready) {
-            const plugin = this.plugins.get(name);
-            if (!plugin) continue;
-            if (!plugin.context) {
-                try {
-                    await this.mount(plugin);
-                    this.logger.log('plugin', 'info', `Plugin ${name}: dependencies ready, mounted`);
-                } catch (error) {
-                    errors.push(error);
-                    this.logger.log('plugin', 'error', `Plugin ${name} failed to mount after dependencies became ready.`, error);
-                    for (const dep of plugin.module.inject || []) {
-                        this.unwatchDependency(dep as string);
+        // 多轮扫描：挂载服务插件可能经 share 解除更多插件的等待（含嵌套触发的追加扫描）。
+        let again = true;
+        while (again) {
+            again = false;
+            this.resolveQueued = false;
+            for (const plugin of this.plugins.values()) {
+                plugin.missing = this.computeMissing(plugin.module);
+            }
+            // 诊断拓扑序只包含依赖就绪的插件：挂起主体的执行顺序同样服从拓扑。
+            const ready = pluginDependencyDiagnose(this, this.rootScope).order;
+            for (const name of ready) {
+                const plugin = this.plugins.get(name);
+                if (!plugin) continue;
+                if (!plugin.context) {
+                    try {
+                        await this.mount(plugin);
+                        this.logger.log('plugin', 'info', `Plugin ${name}: dependencies ready, mounted`);
+                        // 主体可能提升了新服务：追加一轮扫描。
+                        again = true;
+                    } catch (error) {
+                        errors.push(error);
+                        this.logger.log('plugin', 'error', `Plugin ${name} failed to mount after dependencies became ready.`, error);
+                        for (const dep of plugin.module.inject || []) {
+                            this.unwatchDependency(dep as string);
+                        }
+                        this.plugins.delete(name);
+                        continue;
                     }
-                    this.plugins.delete(name);
-                    continue;
+                }
+                if (plugin.desired && !plugin.enabled) {
+                    try {
+                        await plugin.context!.lifecycle.start();
+                        plugin.enabled = true;
+                        this.logger.log('plugin', 'info', `A ${name}`);
+                    } catch (error) {
+                        errors.push(error);
+                        this.logger.log('plugin', 'error', `Plugin ${name} failed to start after dependencies became ready.`, error);
+                    }
                 }
             }
-            if (plugin.desired && !plugin.enabled) {
-                try {
-                    await plugin.context!.lifecycle.start();
-                    plugin.enabled = true;
-                    this.logger.log('plugin', 'info', `A ${name}`);
-                } catch (error) {
-                    errors.push(error);
-                    this.logger.log('plugin', 'error', `Plugin ${name} failed to start after dependencies became ready.`, error);
-                }
-            }
+            if (this.resolveQueued) again = true;
         }
         if (errors.length === 1) throw errors[0];
         if (errors.length > 1) throw new AggregateError(errors, 'Failed to resume waiting plugins.');
