@@ -1,5 +1,5 @@
 import { Logger } from '@cocotais/logger';
-import { App, Config, Container, PluginService, Scope, createContainerScope, injectionProvider, pluginDependencyDiagnose } from '@saukkojs/core';
+import { App, Config, PluginService, Scope, createScope, injectionProvider, pluginDependencyDiagnose } from '@saukkojs/core';
 import toml from 'smol-toml';
 import fs from 'fs';
 import net from 'net';
@@ -47,9 +47,8 @@ async function main() {
 	logger.debug('配置加载', config);
 	logger.debug('import.meta', import.meta);
 
-	const container = new Container();
-	const rootScope = createContainerScope(container);
-	injectionProvider(rootScope, container, config, { headless: false });
+	const rootScope = createScope();
+	injectionProvider(rootScope, config, { headless: false });
 
 	const app = rootScope.get<App>('app')!;
 	const plugin = rootScope.get<PluginService>('plugin')!;
