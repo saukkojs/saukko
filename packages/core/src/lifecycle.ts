@@ -19,12 +19,15 @@ export enum LifecycleState {
  * - `onStart`/`onStop`/`onBeforeStop` 注册的钩子持久保留，可随 start/stop 反复触发：
  *   STOPPED 后可再次 `start()`（插件 enable/disable 开关的底座）。
  * - `onStart` 返回的清理回调属于当前启动周期，随下一次 stop 执行一次后移除。
- * - `dispose()` 是唯一的终态：执行停止流程后进入 DISPOSED，拒绝一切后续操作。
+ * - FAILED（启动/停止失败）后允许再次 `start()` 重试：失败时清理已执行，钩子仍可重跑。
+ * - `dispose()` 是唯一的终态：执行停止流程与 `onDispose` 钩子后进入 DISPOSED，
+ *   拒绝一切后续操作。
  */
 export class Lifecycle {
     private readonly starts: LifecycleStart[] = [];
     private readonly beforeStops: LifecycleCleanup[] = [];
     private readonly stops: LifecycleCleanup[] = [];
+    private readonly disposes: LifecycleCleanup[] = [];
     private cycleCleanups: LifecycleCleanup[] = [];
     private startTask?: Promise<void>;
     private stopTask?: Promise<void>;
@@ -48,6 +51,19 @@ export class Lifecycle {
         this.assertNotTerminal('register a stop notification handler');
         this.beforeStops.push(callback);
         return () => this.remove(this.beforeStops, callback);
+    }
+
+    /**
+     * 注册终态销毁钩子：仅在 `dispose()` 时按注册逆序执行一次。
+     * 与 `onStop` 的区别：`onStop` 随每次 stop 反复触发，`onDispose` 只属于终态。
+     * DISPOSED 后注册抛错；STOPPING/FAILED 中仍允许注册（销毁流程尚未完成）。
+     */
+    onDispose(callback: LifecycleCleanup): () => void {
+        if (this.state === LifecycleState.DISPOSED) {
+            throw new Error('Cannot register a dispose handler after lifecycle is disposed.');
+        }
+        this.disposes.push(callback);
+        return () => this.remove(this.disposes, callback);
     }
 
     start(): Promise<void> {
@@ -78,15 +94,26 @@ export class Lifecycle {
 
     /**
      * 终态销毁：执行停止流程后进入 DISPOSED。
-     * 幂等；停止过程中的失败照常抛出，但状态必定收敛为 DISPOSED。
+     * 幂等；停止与销毁钩子的失败汇总抛出，但状态必定收敛为 DISPOSED。
      */
     dispose(): Promise<void> {
         if (!this.disposeTask) {
-            this.disposeTask = this.stop().finally(() => {
-                this.state = LifecycleState.DISPOSED;
-            });
+            this.disposeTask = this.runDispose();
         }
         return this.disposeTask;
+    }
+
+    private async runDispose() {
+        const errors: unknown[] = [];
+        try {
+            await this.stop();
+        } catch (error) {
+            errors.push(error);
+        }
+        errors.push(...await this.runCallbacks([...this.disposes].reverse()));
+        this.state = LifecycleState.DISPOSED;
+        if (errors.length === 0) return;
+        this.throwErrors(errors, 'Multiple lifecycle dispose handlers failed.');
     }
 
     private async runStart() {
@@ -153,7 +180,8 @@ export class Lifecycle {
     private assertStartable(operation: string) {
         if (
             this.state !== LifecycleState.PENDING &&
-            this.state !== LifecycleState.STOPPED
+            this.state !== LifecycleState.STOPPED &&
+            this.state !== LifecycleState.FAILED
         ) {
             throw new Error(`Cannot ${operation} while lifecycle is ${this.state}.`);
         }

@@ -6,8 +6,7 @@ import { pluginDependencyDiagnose } from "../../utils";
 import { ConfigService } from "../config";
 import { LoggerService } from "../logger";
 import { Bot } from "./bot";
-import { PluginContext } from "./context";
-import { EventListener, Events } from "./types";
+import { PluginContext, SharedEventListeners } from "./context";
 
 type AsyncAble<T> = T | Promise<T>;
 
@@ -48,7 +47,7 @@ export type PluginLike = PluginType | PluginFunction | PluginClass | PluginObjec
 export interface PluginMapItem {
     name: string;
     module: PluginType;
-    context: PluginContext | undefined;
+    context: PluginContext;
     config: Record<string, any> | undefined;
     enabled: boolean;
 }
@@ -56,7 +55,7 @@ export interface PluginMapItem {
 export class PluginService {
     private plugins = new Map<string, PluginMapItem>();
     private bots: Array<Bot> = [];
-    private sharedEventListeners = new Map<string, EventListener<keyof Events>[]>();
+    private sharedEventListeners: SharedEventListeners = new Map();
     private readonly rootScope: Scope;
     private readonly replaceWatchers = new Map<string, { count: number; off: () => void }>();
 
@@ -70,7 +69,13 @@ export class PluginService {
         this.rootScope = rootScope ?? createScope();
     }
 
-    install(plugin: PluginLike) {
+    /**
+     * 安装插件：派生子作用域、构造 Context 并**立即执行插件主体**
+     * （注册钩子、监听与服务提升均在此时完成）。enable/disable 只是
+     * 触发子作用域生命周期的 start/stop 开关，主体不会重复执行。
+     * 主体执行失败时销毁子作用域且不留记录，重试即重新 install。
+     */
+    async install(plugin: PluginLike) {
         const pluginModule = this.resolvePlugin(plugin);
         if (this.plugins.has(pluginModule.name)) {
             this.logger.log('plugin', 'error', `Plugin ${pluginModule.name} is already installed`);
@@ -89,11 +94,30 @@ export class PluginService {
         if (missingDeps.length > 0) {
             this.logger.log('plugin', 'warn', `Plugin ${pluginModule.name}: Dependency ${missingDeps.join(', ')} missing when intalling`);
         }
+        // 注入快照仅作兼容的 dependencies 记录；实际读取沿作用域父链完成，
+        // 不再写入子作用域（父链全量可读已覆盖，且服务替换后读取始终最新）。
+        const injections: Record<string, any> = {};
+        for (const dep of dependencies) {
+            if (this.rootScope.has(dep)) {
+                injections[dep] = this.rootScope.get(dep);
+            }
+        }
+        const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
+        const currentConfig = pluginConfig[pluginModule.name] || {};
+        const scope = this.rootScope.fork();
+        const context = new PluginContext(scope, injections, currentConfig, this.bots, this.sharedEventListeners);
+        try {
+            await pluginModule.default(context);
+        } catch (error) {
+            // 主体执行失败：销毁子作用域、不登记插件记录，重试即重新 install。
+            await scope.dispose();
+            throw error;
+        }
         this.plugins.set(pluginModule.name, {
             name: pluginModule.name,
             module: pluginModule,
-            context: undefined,
-            config: undefined,
+            context,
+            config: currentConfig,
             enabled: false
         });
         // 监听插件声明的依赖：根作用域上同名服务被 provide 覆盖时联动重启。
@@ -147,6 +171,7 @@ export class PluginService {
         throw new Error(`插件格式不正确：必须是 { name, default } 模块、函数、类或含 apply 方法的对象，得到 ${typeof plugin}`);
     }
 
+    /** 启用插件：触发子作用域生命周期的 start（执行 onStart 钩子）。 */
     async apply(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
@@ -158,13 +183,9 @@ export class PluginService {
             return;
         }
         const dependencies = plugin.module.inject || [];
-        const injections: Record<string, any> = {};
         let missingDeps = [];
         for (const dep of dependencies) {
-            if (this.rootScope.has(dep)) {
-                injections[dep] = this.rootScope.get(dep);
-                continue;
-            }
+            if (this.rootScope.has(dep)) continue;
             // 插件间依赖仅约束启动顺序，无服务实例可注入。
             if (this.plugins.has(dep as string)) continue;
             missingDeps.push(dep);
@@ -173,37 +194,13 @@ export class PluginService {
             this.logger.log('plugin', 'error', `Cannot apply plugin ${name}: Dependency ${missingDeps.join(', ')} not found`);
             return;
         }
-        const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
-        const currentConfig = pluginConfig[name] || {};
-        const scope = this.rootScope.fork();
-        // 注入的服务登记到插件的子作用域：插件通过 `context.get()` 沿作用域链读取，
-        // 兄弟插件不可见，插件卸载时随子作用域一并释放。
-        for (const [dep, service] of Object.entries(injections)) {
-            scope.set(dep, service);
-        }
-        const context = new PluginContext(scope, injections, currentConfig, this.bots, this.sharedEventListeners);
-        try {
-            await plugin.module.default(context);
-            this.plugins.set(name, {
-                ...plugin,
-                context,
-                config: currentConfig,
-                enabled: true
-            });
-            await context.start();
-        } catch (error) {
-            await context.dispose();
-            this.plugins.set(name, {
-                ...plugin,
-                context: undefined,
-                config: undefined,
-                enabled: false
-            });
-            throw error;
-        }
+        // 启动失败时生命周期进入 FAILED（清理已执行），插件保持未启用，可重试。
+        await plugin.context.lifecycle.start();
+        plugin.enabled = true;
         this.logger.log('plugin', 'info', `A ${name}`);
     }
 
+    /** 禁用插件：触发子作用域生命周期的 stop（执行 onStop 钩子），作用域不销毁。 */
     async dispose(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
@@ -215,16 +212,14 @@ export class PluginService {
             return;
         }
         try {
-            await plugin.context!.dispose();
+            await plugin.context.lifecycle.stop();
         } finally {
-            this.plugins.set(name, {
-                ...plugin,
-                enabled: false
-            });
+            plugin.enabled = false;
             this.logger.log('plugin', 'info', `D ${name}`);
         }
     }
 
+    /** 卸载插件：先 disable（若启用），再终态销毁子作用域并摘除记录。 */
     async remove(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
@@ -234,6 +229,7 @@ export class PluginService {
         if (plugin.enabled) {
             await this.dispose(name);
         }
+        await plugin.context.dispose();
         for (const dep of plugin.module.inject || []) {
             this.unwatchDependency(dep as string);
         }

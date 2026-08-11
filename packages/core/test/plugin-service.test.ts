@@ -22,7 +22,7 @@ test('removing an enabled plugin waits for its lifecycle cleanup', async () => {
     });
     const service = createPluginService();
 
-    service.install({
+    await service.install({
         name: 'removable',
         default: (context) => {
             context.lifecycle.onStop(async () => {
@@ -50,26 +50,29 @@ test('removing an enabled plugin waits for its lifecycle cleanup', async () => {
     assert.equal(service.map().has('removable'), false);
 });
 
-test('a failed plugin apply cleans up its context and can be retried', async () => {
+test('a failed plugin install cleans up its scope and can be retried', async () => {
     const service = createPluginService();
     const cleanups: string[] = [];
     let attempts = 0;
 
-    service.install({
+    const plugin = {
         name: 'retryable',
-        default: (context) => {
+        default: (context: PluginContext) => {
             attempts += 1;
             context.lifecycle.onStop(() => {
                 cleanups.push(`cleanup-${attempts}`);
             });
-            if (attempts === 1) throw new Error('apply failed');
+            if (attempts === 1) throw new Error('install failed');
         },
-    });
+    };
 
-    await assert.rejects(service.apply('retryable'), /apply failed/);
+    // install 即执行主体：失败时销毁子作用域（已注册的清理照常执行），不留记录。
+    await assert.rejects(service.install(plugin), /install failed/);
     assert.deepEqual(cleanups, ['cleanup-1']);
-    assert.equal(service.map().get('retryable')?.enabled, false);
+    assert.equal(service.map().has('retryable'), false);
 
+    // 重试即重新 install，主体再次执行。
+    await service.install(plugin);
     await service.apply('retryable');
     assert.equal(service.map().get('retryable')?.enabled, true);
 
@@ -81,7 +84,7 @@ test('a failed uninstall keeps a disabled plugin available for a retry', async (
     const service = createPluginService();
     let cleanupAttempts = 0;
 
-    service.install({
+    await service.install({
         name: 'failing-cleanup',
         default: (context) => {
             context.lifecycle.onStop(() => {
@@ -101,7 +104,7 @@ test('a failed uninstall keeps a disabled plugin available for a retry', async (
     assert.equal(cleanupAttempts, 1);
 });
 
-test('an applied plugin reads injected services through its child scope; undeclared services stay readable via the parent chain', async () => {
+test('an installed plugin reads injected services through its child scope; undeclared services stay readable via the parent chain', async () => {
     const services: Record<string, unknown> = { storage: { kind: 'storage' } };
     const rootScope = createScope();
     rootScope.set('storage', services.storage);
@@ -112,44 +115,42 @@ test('an applied plugin reads injected services through its child scope; undecla
     );
     let consumer!: PluginContext;
     let bystander!: PluginContext;
-    service.install({
+    // install 即执行主体：Context 在 install 完成后即可用。
+    await service.install({
         name: 'consumer',
         inject: ['storage'],
         default: (context) => {
             consumer = context;
         },
     });
-    service.install({
+    await service.install({
         name: 'bystander',
         default: (context) => {
             bystander = context;
         },
     });
 
-    await service.apply('consumer');
-    await service.apply('bystander');
-
     assert.equal(consumer.get('storage'), services.storage);
     assert.equal(consumer.has('storage'), true);
     // 未声明 inject 的插件也可沿父链读取根作用域服务（全量可读语义）；
     // 归属隔离由“插件自有登记”用例覆盖。
     assert.equal(bystander.get('storage'), services.storage);
-    // 兼容的 dependencies 记录保持不变。
+    // 兼容的 dependencies 记录为 install 时的注入快照。
     assert.equal((consumer.dependencies as Record<string, unknown>).storage, services.storage);
 });
 
-test('plugin scope registrations belong to the plugin scope and are released with it', async () => {
+test('plugin scope registrations belong to the plugin scope and are released on uninstall', async () => {
     const service = createPluginService();
     let owner!: PluginContext;
     let bystander!: PluginContext;
-    service.install({
+    await service.install({
         name: 'owner',
         default: (context) => {
             owner = context;
             context.set('custom', 42);
         },
     });
-    service.install({
+    await service.install({
         name: 'bystander',
         default: (context) => {
             bystander = context;
@@ -161,26 +162,55 @@ test('plugin scope registrations belong to the plugin scope and are released wit
     assert.equal(owner.get('custom'), 42);
     assert.equal(bystander.has('custom'), false);
 
+    // disable 仅停止生命周期，作用域不销毁：登记保留，可再次 enable。
     await service.dispose('owner');
-    assert.equal(owner.scope.lifecycle.state, LifecycleState.DISPOSED);
-    assert.throws(() => owner.set('late', 1), /disposed/);
+    assert.equal(owner.scope.lifecycle.state, LifecycleState.STOPPED);
+    assert.equal(owner.get('custom'), 42);
+    await service.apply('owner');
+    assert.equal(owner.scope.lifecycle.state, LifecycleState.ACTIVE);
     // 兄弟插件的作用域不受波及。
     assert.equal(bystander.scope.lifecycle.state, LifecycleState.ACTIVE);
+
+    // uninstall 才终态销毁作用域。
+    await service.remove('owner');
+    assert.equal(owner.scope.lifecycle.state, LifecycleState.DISPOSED);
+    assert.throws(() => owner.set('late', 1), /disposed/);
 });
 
-test('registering an event listener while the plugin scope is stopping is rejected', async () => {
+test('disabled plugins do not receive business events; listeners survive re-enable', async () => {
     const service = createPluginService();
-    service.install({
-        name: 'late-listener',
+    const calls: string[] = [];
+    let emitter!: PluginContext;
+    await service.install({
+        name: 'listener',
         default: (context) => {
-            context.lifecycle.onStop(() => {
-                context.on('test.event' as never, () => {});
+            context.on('test.event' as never, () => {
+                calls.push('received');
             });
         },
     });
-    await service.apply('late-listener');
+    await service.install({
+        name: 'emitter',
+        default: (context) => {
+            emitter = context;
+        },
+    });
+    await service.apply('listener');
+    await service.apply('emitter');
+    const event = { name: 'test.event', data: { value: 'x' } };
 
-    await assert.rejects(service.dispose('late-listener'), /Cannot register a cleanup handler/);
+    emitter.emit('test.event' as never, event as never);
+    assert.deepEqual(calls, ['received']);
+
+    // 禁用后监听仍登记但受门控，不再接收事件。
+    await service.dispose('listener');
+    emitter.emit('test.event' as never, event as never);
+    assert.deepEqual(calls, ['received']);
+
+    // 重新启用后同一监听自动恢复接收。
+    await service.apply('listener');
+    emitter.emit('test.event' as never, event as never);
+    assert.deepEqual(calls, ['received', 'received']);
 });
 
 test('plugins can be installed as functions, classes or apply-objects', async () => {
@@ -214,15 +244,16 @@ test('plugins can be installed as functions, classes or apply-objects', async ()
         },
     };
 
-    service.install(functionPlugin);
-    service.install(ClassPlugin);
-    service.install(objectPlugin);
+    // install 即执行主体：多形态归一化后的挂载副作用此时已发生。
+    await service.install(functionPlugin);
+    await service.install(ClassPlugin);
+    await service.install(objectPlugin);
+    assert.deepEqual(mounted, ['function:T', 'class:T', 'object:T']);
 
     await service.apply('functionPlugin');
     await service.apply('ClassPlugin');
     await service.apply('object-plugin');
 
-    assert.deepEqual(mounted, ['function:T', 'class:T', 'object:T']);
     assert.equal(service.map().get('functionPlugin')?.enabled, true);
     assert.equal(service.map().get('ClassPlugin')?.enabled, true);
     assert.equal(service.map().get('object-plugin')?.enabled, true);
@@ -230,11 +261,11 @@ test('plugins can be installed as functions, classes or apply-objects', async ()
     await rootScope.dispose();
 });
 
-test('plugins without a resolvable name or in an invalid shape are rejected', () => {
+test('plugins without a resolvable name or in an invalid shape are rejected', async () => {
     const service = createPluginService();
 
-    assert.throws(() => service.install((() => {}) as never), /匿名函数/);
-    assert.throws(() => service.install({ default: () => {} } as never), /模块形态需提供 name/);
-    assert.throws(() => service.install({ apply: () => {} } as never), /对象形态需提供 name/);
-    assert.throws(() => service.install(42 as never), /插件格式不正确/);
+    await assert.rejects(service.install((() => {}) as never), /匿名函数/);
+    await assert.rejects(service.install({ default: () => {} } as never), /模块形态需提供 name/);
+    await assert.rejects(service.install({ apply: () => {} } as never), /对象形态需提供 name/);
+    await assert.rejects(service.install(42 as never), /插件格式不正确/);
 });

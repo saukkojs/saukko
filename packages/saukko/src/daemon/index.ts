@@ -61,7 +61,12 @@ async function main() {
 
 	const pluginsToLoad = await getPluginPackages(config, logger);
 	for (const pluginModule of pluginsToLoad) {
-		plugin.install(pluginModule);
+		try {
+			// install 即执行插件主体：单个插件装载失败不阻断其余插件。
+			await plugin.install(pluginModule);
+		} catch (error) {
+			logger.error(`装载插件 ${pluginModule?.name ?? 'unknown'} 失败：`, error);
+		}
 	}
 	logger.info('已装载 ', pluginsToLoad.length, ' 个插件');
 
@@ -154,7 +159,7 @@ async function handleMessage(message: DaemonMessage, socket: net.Socket, app: Ap
 						throw new Error('无效的插件');
 					}
 					
-					pluginService.install(plugin);
+					await pluginService.install(plugin);
 					logger.info(`已通过 IPC 安装插件 ${plugin.name}`);
 					const response: DaemonResponse = { ok: true, message: `已安装插件 ${plugin.name}` };
 					socket.write(JSON.stringify(response) + '\n');

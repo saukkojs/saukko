@@ -39,13 +39,17 @@ test('full assembly starts and stops plugins through the real scope tree', async
     const { rootScope, app, plugin } = assemble(createConfig(storageDir));
     const events: string[] = [];
     const contexts = new Map<string, PluginContext>();
-    const track = (name: string, inject?: readonly string[]) => {
-        plugin.install({
+    const track = async (name: string, inject?: readonly string[]) => {
+        // install 即执行主体：启动/停止追踪挂到生命周期钩子上，
+        // 钩子的触发顺序才反映 enable/disable 的拓扑序。
+        await plugin.install({
             name,
             inject: inject as never,
             default: (context) => {
-                events.push(`start-${name}`);
                 contexts.set(name, context);
+                context.lifecycle.onStart(() => {
+                    events.push(`start-${name}`);
+                });
                 context.lifecycle.onStop(() => {
                     events.push(`stop-${name}`);
                 });
@@ -55,14 +59,14 @@ test('full assembly starts and stops plugins through the real scope tree', async
 
     // 外部服务走 daemon 的 register 路径；插件混合依赖外部服务、核心服务与插件。
     rootScope.register('ext-svc', () => ({ kind: 'ext-svc' }));
-    track('base-ext', ['ext-svc']);
-    track('uses-storage', ['storage']);
-    track('top', ['base-ext']);
+    await track('base-ext', ['ext-svc']);
+    await track('uses-storage', ['storage']);
+    await track('top', ['base-ext']);
     // 缺失依赖的插件应被诊断跳过，不影响其余插件。
-    track('broken', ['ghost-svc']);
+    await track('broken', ['ghost-svc']);
 
     let storageValue: string | null = null;
-    plugin.install({
+    await plugin.install({
         name: 'storage-writer',
         inject: ['storage'],
         default: (context) => {
@@ -82,13 +86,18 @@ test('full assembly starts and stops plugins through the real scope tree', async
     assert.equal(started.length, 3);
     assert.ok(started.indexOf('start-base-ext') < started.indexOf('start-top'));
     for (const [name, context] of contexts) {
-        assert.equal(context.scope.lifecycle.state, LifecycleState.ACTIVE, name);
+        // 未启用的 broken 保持 PENDING（主体已执行，onStart 未触发）；其余为 ACTIVE。
+        const expected = name === 'broken' ? LifecycleState.PENDING : LifecycleState.ACTIVE;
+        assert.equal(context.scope.lifecycle.state, expected, name);
     }
 
     await app.stop();
 
     const stopped = events.filter((event) => event.startsWith('stop-'));
-    assert.equal(stopped.length, 3);
+    // 3 个已启用插件按拓扑逆序停止；broken 虽未启用，但其主体在 install 时已执行，
+    // 应用停止的卸载流程同样销毁其子作用域，onStop 清理照常运行。
+    assert.equal(stopped.length, 4);
+    assert.ok(stopped.includes('stop-broken'));
     // 停止为启动拓扑的逆序：top 先于 base-ext。
     assert.ok(stopped.indexOf('stop-top') < stopped.indexOf('stop-base-ext'));
     for (const [name, context] of contexts) {
@@ -104,7 +113,8 @@ test('real async resources are released exactly once when the app stops', async 
     let ticks = 0;
     let port = 0;
 
-    plugin.install({
+    // install 即执行主体：资源在 install 时创建，清理挂到 onStop。
+    await plugin.install({
         name: 'resource-owner',
         default: async (context) => {
             // 真实定时器：停止后不得再有回调触发。

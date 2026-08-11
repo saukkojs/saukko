@@ -145,7 +145,7 @@ test('PluginContext removes its business event listeners during disposal', async
     assert.equal(context.lifecycle.state, LifecycleState.DISPOSED);
 });
 
-test('PluginContext dispatches business events synchronously', () => {
+test('PluginContext dispatches business events synchronously', async () => {
     const context = new PluginContext(createScope(), {}, new Map(), [], new Map());
     const calls: string[] = [];
 
@@ -153,6 +153,11 @@ test('PluginContext dispatches business events synchronously', () => {
         calls.push('event');
     });
 
+    // 事件分发受属主生命周期门控：仅 ACTIVE 状态接收。
+    context.emit('test.event', { name: 'test.event', data: { value: 'pending' } });
+    assert.deepEqual(calls, []);
+
+    await context.start();
     const result = context.emit('test.event', { name: 'test.event', data: { value: 'test' } });
     assert.deepEqual(calls, ['event']);
     assert.equal(result, undefined);
@@ -222,4 +227,42 @@ test('dispose is terminal and rejects further operations', async () => {
     await lifecycle.dispose();
     await lifecycle.stop();
     assert.deepEqual(calls, ['stop']);
+});
+
+test('onDispose hooks run once in reverse registration order at terminal disposal', async () => {
+    const lifecycle = new Lifecycle();
+    const calls: string[] = [];
+    lifecycle.onDispose(() => {
+        calls.push('first');
+    });
+    lifecycle.onDispose(() => {
+        calls.push('second');
+    });
+
+    await lifecycle.start();
+    await lifecycle.dispose();
+
+    assert.deepEqual(calls, ['second', 'first']);
+    assert.equal(lifecycle.state, LifecycleState.DISPOSED);
+    assert.throws(() => lifecycle.onDispose(() => {}), /disposed/);
+
+    // 幂等：重复 dispose 不重跑销毁钩子。
+    await lifecycle.dispose();
+    assert.deepEqual(calls, ['second', 'first']);
+});
+
+test('a failed start can be retried', async () => {
+    const lifecycle = new Lifecycle();
+    let attempts = 0;
+    lifecycle.onStart(() => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('startup failed');
+    });
+
+    await assert.rejects(lifecycle.start(), /startup failed/);
+    assert.equal(lifecycle.state, LifecycleState.FAILED);
+
+    await lifecycle.start();
+    assert.equal(lifecycle.state, LifecycleState.ACTIVE);
+    assert.equal(attempts, 2);
 });

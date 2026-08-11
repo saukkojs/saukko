@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createScope, type Scope } from '../src/scope';
 import type { ConfigService } from '../src/services/config';
 import type { LoggerService } from '../src/services/logger';
-import { PluginService } from '../src/services/plugin';
+import { PluginContext, PluginService } from '../src/services/plugin';
 import { pluginDependencyDiagnose } from '../src/utils';
 
 function createPluginService(rootScope: Scope) {
@@ -14,12 +14,12 @@ function createPluginService(rootScope: Scope) {
     );
 }
 
-test('diagnosis resolves service dependencies against the scope registry', () => {
+test('diagnosis resolves service dependencies against the scope registry', async () => {
     const scope = createScope();
     scope.register('svc', () => ({ kind: 'svc' }));
     const plugin = createPluginService(scope);
-    plugin.install({ name: 'uses-svc', inject: ['svc'], default: () => {} });
-    plugin.install({ name: 'uses-ghost', inject: ['ghost'], default: () => {} });
+    await plugin.install({ name: 'uses-svc', inject: ['svc'], default: () => {} });
+    await plugin.install({ name: 'uses-ghost', inject: ['ghost'], default: () => {} });
 
     const diagnosis = pluginDependencyDiagnose(plugin, scope);
 
@@ -34,12 +34,12 @@ test('diagnosis resolves service dependencies against the scope registry', () =>
 test('re-diagnosing after a dynamic service registration clears the missing dependency', async () => {
     const scope = createScope();
     const plugin = createPluginService(scope);
-    let injected: unknown;
-    plugin.install({
+    let context!: PluginContext;
+    await plugin.install({
         name: 'late-bound',
         inject: ['late-svc'],
-        default: (context) => {
-            injected = context.get('late-svc');
+        default: (ctx) => {
+            context = ctx;
         },
     });
 
@@ -60,15 +60,17 @@ test('re-diagnosing after a dynamic service registration clears the missing depe
     assert.deepEqual(after.issues, []);
 
     await plugin.apply('late-bound');
-    assert.equal(injected, service);
+    // 主体在 install 时已执行（当时依赖缺失）；读取沿父链动态解析，
+    // 依赖补齐后随时可读到新服务。
+    assert.equal(context.get('late-svc'), service);
 });
 
-test('circular plugin dependencies are reported and excluded from the start order', () => {
+test('circular plugin dependencies are reported and excluded from the start order', async () => {
     const scope = createScope();
     const plugin = createPluginService(scope);
-    plugin.install({ name: 'a', inject: ['b'], default: () => {} });
-    plugin.install({ name: 'b', inject: ['a'], default: () => {} });
-    plugin.install({ name: 'independent', default: () => {} });
+    await plugin.install({ name: 'a', inject: ['b'], default: () => {} });
+    await plugin.install({ name: 'b', inject: ['a'], default: () => {} });
+    await plugin.install({ name: 'independent', default: () => {} });
 
     const diagnosis = pluginDependencyDiagnose(plugin, scope);
 
@@ -80,8 +82,8 @@ test('circular plugin dependencies are reported and excluded from the start orde
 test('disabling a depended-on plugin makes re-diagnosis flag its dependents as missing', async () => {
     const scope = createScope();
     const plugin = createPluginService(scope);
-    plugin.install({ name: 'base', default: () => {} });
-    plugin.install({ name: 'top', inject: ['base'], default: () => {} });
+    await plugin.install({ name: 'base', default: () => {} });
+    await plugin.install({ name: 'top', inject: ['base'], default: () => {} });
 
     await plugin.apply('base');
     await plugin.apply('top');

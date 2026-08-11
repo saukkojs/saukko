@@ -1,25 +1,34 @@
 import { Bot } from "./bot";
 import { PluginDependenciesRegistry, Events, Event, EventListener } from "./types";
 import { Context, Scope, ScopeServiceFactory } from "../../scope";
+import { LifecycleState } from "../../lifecycle";
 import type { ServiceRegistry } from "../../types";
 
-export class PluginContext implements Context {
-    private disposed = false;
+/** 带属主的事件监听：分发时按属主插件的生命周期状态门控。 */
+export interface OwnedEventListener {
+    owner: PluginContext;
+    listener: EventListener<keyof Events>;
+}
 
+/** 插件间共享的事件监听表，由 PluginService 持有并分发给各插件 Context。 */
+export type SharedEventListeners = Map<string, OwnedEventListener[]>;
+
+export class PluginContext implements Context {
     constructor(
         public readonly scope: Scope,
         public readonly dependencies: PluginDependenciesRegistry,
         public readonly config: Map<string, any>,
         public bots: Array<Bot>,
-        private sharedEventListeners: Map<string, EventListener<keyof Events>[]>
-    ) {
-        this.lifecycle.onStop(() => {
-            this.disposed = true;
-        });
-    }
+        private sharedEventListeners: SharedEventListeners
+    ) {}
 
     get lifecycle() {
         return this.scope.lifecycle;
+    }
+
+    /** 终态判定：作用域生命周期进入 DISPOSED 后，事件读写与登记一律拒绝/忽略。 */
+    private get disposed() {
+        return this.lifecycle.state === LifecycleState.DISPOSED;
     }
 
     has(name: string) {
@@ -48,15 +57,15 @@ export class PluginContext implements Context {
         return this.scope.list();
     }
 
-    private disposeGenerator<T extends keyof Events>(event: T, listener: EventListener<T>) {
+    private disposeGenerator(event: string, entry: OwnedEventListener) {
         return () => {
-            const listeners = this.sharedEventListeners.get(event as string);
+            const listeners = this.sharedEventListeners.get(event);
             if (!listeners) return;
-            const index = listeners.indexOf(listener as EventListener<keyof Events>);
+            const index = listeners.indexOf(entry);
             if (index !== -1) {
                 listeners.splice(index, 1);
                 if (listeners.length === 0) {
-                    this.sharedEventListeners.delete(event as string);
+                    this.sharedEventListeners.delete(event);
                 }
             }
         }
@@ -64,15 +73,18 @@ export class PluginContext implements Context {
 
     on<T extends keyof Events>(event: T, listener: EventListener<T>) {
         if (this.disposed) return () => {};
-        if (!this.sharedEventListeners.has(event as string)) {
-            this.sharedEventListeners.set(event as string, []);
+        const entry: OwnedEventListener = { owner: this, listener: listener as EventListener<keyof Events> };
+        let listeners = this.sharedEventListeners.get(event as string);
+        if (!listeners) {
+            listeners = [];
+            this.sharedEventListeners.set(event as string, listeners);
         }
-        this.sharedEventListeners.get(event as string)!.push(listener as EventListener<keyof Events>);
+        listeners.push(entry);
 
-        const dispose = this.disposeGenerator(event, listener);
-        // 监听清理直接绑定到子作用域的生命周期：
-        // 作用域停止时按注册逆序自动移除监听，无需额外的私有清理列表。
-        const unbind = this.lifecycle.onStop(dispose);
+        const dispose = this.disposeGenerator(event as string, entry);
+        // 监听清理绑定终态销毁：disable（stop）不摘除监听，仅门控分发；
+        // 重新 enable 后监听自动恢复，uninstall（dispose）时才真正移除。
+        const unbind = this.lifecycle.onDispose(dispose);
         return () => {
             unbind();
             dispose();
@@ -83,7 +95,9 @@ export class PluginContext implements Context {
         if (this.disposed) return;
         const listeners = this.sharedEventListeners.get(event as string);
         if (!listeners) return;
-        const index = listeners.indexOf(listener as EventListener<keyof Events>);
+        const index = listeners.findIndex(
+            (entry) => entry.owner === this && entry.listener === (listener as EventListener<keyof Events>)
+        );
         if (index !== -1) {
             listeners.splice(index, 1);
         }
@@ -93,7 +107,9 @@ export class PluginContext implements Context {
         if (this.disposed) return;
         const listeners = this.sharedEventListeners.get(event as string);
         if (!listeners) return;
-        for (const listener of [...listeners]) {
+        for (const { owner, listener } of [...listeners]) {
+            // 门控：仅 ACTIVE 属主接收事件；disabled/停止中的插件不接收。
+            if (owner.lifecycle.state !== LifecycleState.ACTIVE) continue;
             listener(args as Event<keyof Events>);
         }
     }

@@ -15,7 +15,7 @@ test('App stops every enabled plugin when one plugin cleanup fails', async () =>
             ['broken', { enabled: true }],
             ['healthy', { enabled: true }],
         ]),
-        dispose: async (name: string) => {
+        remove: async (name: string) => {
             stopped.push(name);
             if (name === 'broken') throw new Error('broken cleanup');
         },
@@ -27,7 +27,7 @@ test('App stops every enabled plugin when one plugin cleanup fails', async () =>
 
     await assert.rejects(app.stop(), /broken cleanup/);
 
-    // 停止顺序为启动序列的逆序（LIFO），失败的插件不阻断其余插件。
+    // 卸载顺序为启动序列的逆序（LIFO），失败的插件不阻断其余插件。
     assert.deepEqual(stopped, ['healthy', 'broken']);
     assert.equal(logs.at(-1)?.[2], 'App stopped.');
 });
@@ -43,7 +43,7 @@ test('App stops plugins in reverse dependency order and disposes their scopes', 
     );
     // 故意打乱安装顺序，依赖链为 top -> mid -> base。
     for (const [name, inject] of [['top', ['mid']], ['base', []], ['mid', ['base']]] as const) {
-        plugin.install({
+        await plugin.install({
             name,
             inject: inject as never,
             default: (context) => {

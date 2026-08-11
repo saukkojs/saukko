@@ -29,19 +29,20 @@ export class App {
         this.logger.log('app', 'info', 'Stopping app...');
         const plugins = this.plugin.map();
         const enabled = (name: string) => plugins.get(name)?.enabled === true;
-        // 停止顺序取启动拓扑顺序的逆序：依赖方先停止，与作用域“先子后父”的销毁顺序一致。
+        // 卸载顺序取启动拓扑顺序的逆序：依赖方先停止，与作用域“先子后父”的销毁顺序一致。
         const diagnosis = pluginDependencyDiagnose(this.plugin, this.scope);
         const stopOrder = diagnosis.order.filter(enabled).reverse();
-        // 未进入启动序列（如有依赖问题被跳过）但已启用的插件，排在最后兜底停止。
+        // 未进入启动序列的插件（未启用或存在依赖问题）排在最后兜底卸载：
+        // 应用停止是终态操作，全部插件的子作用域都要销毁。
         for (const name of plugins.keys()) {
-            if (enabled(name) && !diagnosis.order.includes(name)) {
+            if (!stopOrder.includes(name)) {
                 stopOrder.push(name);
             }
         }
         const errors: unknown[] = [];
         for (const name of stopOrder) {
             try {
-                await this.plugin.dispose(name);
+                await this.plugin.remove(name);
             } catch (error) {
                 errors.push(error);
                 this.logger.log('app', 'error', `Failed to stop plugin ${name}.`, error);
