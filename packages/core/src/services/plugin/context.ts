@@ -1,6 +1,7 @@
 import { Bot } from "./bot";
 import { PluginDependenciesRegistry, Events, Event, EventListener } from "./types";
 import { Context, Scope, ScopeServiceFactory } from "../../scope";
+import type { ServiceRegistry } from "../../container";
 
 export class PluginContext implements Context {
     private disposed = false;
@@ -25,6 +26,8 @@ export class PluginContext implements Context {
         return this.scope.has(name);
     }
 
+    get<K extends keyof ServiceRegistry>(name: K): ServiceRegistry[K] | undefined;
+    get<T = unknown>(name: string): T | undefined;
     get<T = unknown>(name: string): T | undefined {
         return this.scope.get<T>(name);
     }

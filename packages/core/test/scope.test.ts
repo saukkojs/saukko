@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LifecycleState } from '../src/lifecycle';
 import { createContainerScope, createScope } from '../src/scope';
+import type { LoggerService } from '../src/services/logger';
 
 test('child scope reads fall back to the parent chain', () => {
     const root = createScope();
@@ -392,4 +393,14 @@ test('a failing onReplace listener rejects the covering provide', async () => {
     // 服务本身已完成替换，失败只来自联动侧。
     assert.deepEqual(root.get('svc'), { v: 2 });
     await root.dispose();
+});
+
+test('get preserves ServiceRegistry typing for known keys and falls back otherwise', () => {
+    const root = createScope();
+    // 编译期断言：命中注册表的键返回注册表类型，未命中需显式泛型。
+    const logger: LoggerService | undefined = root.get('logger');
+    const custom = root.get<number>('custom');
+    const wrong: string | undefined = custom;
+    assert.equal(logger, undefined);
+    assert.equal(wrong, undefined);
 });

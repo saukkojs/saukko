@@ -1,4 +1,5 @@
 import { Awaitable, Lifecycle, LifecycleState } from './lifecycle';
+import type { ServiceRegistry } from './container';
 
 /**
  * 服务的生命周期约定（可选实现）。
@@ -45,7 +46,8 @@ export interface Scope {
     /** 沿父链查找资源是否已登记。 */
     has(name: string): boolean;
 
-    /** 沿父链读取资源；未登记返回 `undefined`。 */
+    /** 沿父链读取资源；未登记返回 `undefined`。键命中 `ServiceRegistry` 时返回注册表类型。 */
+    get<K extends keyof ServiceRegistry>(name: K): ServiceRegistry[K] | undefined;
     get<T = unknown>(name: string): T | undefined;
 
     /**
@@ -120,7 +122,8 @@ export interface Context {
     /** 委托给 `scope.has`。 */
     has(name: string): boolean;
 
-    /** 委托给 `scope.get`。 */
+    /** 委托给 `scope.get`。键命中 `ServiceRegistry` 时返回注册表类型。 */
+    get<K extends keyof ServiceRegistry>(name: K): ServiceRegistry[K] | undefined;
     get<T = unknown>(name: string): T | undefined;
 
     /** 委托给 `scope.set`；登记的资源归属于本 Context 绑定的作用域。 */
