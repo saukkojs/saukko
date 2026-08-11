@@ -5,7 +5,7 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { SaukkoEnv, DaemonMessage, DaemonResponse } from '../types';
-import { getPluginPackages, getServicePackages, isPluginPackage, resolveModule } from './loader';
+import { getPluginPackages, isPluginPackage, resolveModule } from './loader';
 
 const env = process.env as SaukkoEnv;
 const configPath = env.SAUKKO_CONFIG_PATH || path.join(process.cwd(), 'saukko.toml');
@@ -53,12 +53,8 @@ async function main() {
 	const app = rootScope.get<App>('app')!;
 	const plugin = rootScope.get<PluginService>('plugin')!;
 
-	const servicesToLoad = await getServicePackages(config, logger);
-	for (const serviceModule of servicesToLoad) {
-		rootScope.register(serviceModule.name, serviceModule.default);
-	}
-	logger.info('已装载 ', servicesToLoad.length, ' 个服务');
-
+	// 服务即插件：服务包以插件形态经 plugin.files / 依赖扫描装载，
+	// 在插件主体内通过 context.share 提升到根作用域对外提供。
 	const pluginsToLoad = await getPluginPackages(config, logger);
 	for (const pluginModule of pluginsToLoad) {
 		try {

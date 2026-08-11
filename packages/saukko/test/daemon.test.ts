@@ -29,9 +29,38 @@ export const inject = ['ghost-svc'];
 export default function () {}
 `;
 
+/** 夹具服务插件：主体内经 context.share 提升服务，start/stop 写标记文件。 */
+const fixtureSvc = `import fs from 'node:fs';
+import path from 'node:path';
+export const name = 'fixture-svc';
+export default async function (context) {
+    await context.share('demo-svc', {
+        start() { fs.writeFileSync(path.join(process.cwd(), 'fixture-svc.started'), 'started'); },
+        stop() { fs.writeFileSync(path.join(process.cwd(), 'fixture-svc.stopped'), 'stopped'); },
+    });
+}
+`;
+
+/** 夹具消费插件：依赖 demo-svc，启停时追加日志（观察级联与恢复）。 */
+const fixtureDep = `import fs from 'node:fs';
+import path from 'node:path';
+export const name = 'fixture-dep';
+export const inject = ['demo-svc'];
+export default function (context) {
+    context.lifecycle.onStart(() => {
+        fs.appendFileSync(path.join(process.cwd(), 'fixture-dep.log'), 'start\\n');
+    });
+    context.lifecycle.onStop(() => {
+        fs.appendFileSync(path.join(process.cwd(), 'fixture-dep.log'), 'stop\\n');
+    });
+}
+`;
+
 function createProjectDir() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saukko-daemon-test-'));
     fs.writeFileSync(path.join(dir, 'package.json'), '{}', 'utf8');
+    fs.writeFileSync(path.join(dir, 'fixture-dep.mjs'), fixtureDep, 'utf8');
+    fs.writeFileSync(path.join(dir, 'fixture-svc.mjs'), fixtureSvc, 'utf8');
     fs.writeFileSync(path.join(dir, 'fixture-a.mjs'), fixturePlugin('fixture-a'), 'utf8');
     fs.writeFileSync(path.join(dir, 'fixture-b.mjs'), fixturePlugin('fixture-b'), 'utf8');
     fs.writeFileSync(path.join(dir, 'fixture-ghost.mjs'), fixtureGhost, 'utf8');
@@ -39,12 +68,9 @@ function createProjectDir() {
 name = "daemon-test"
 
 [plugin]
-files = ["./fixture-a.mjs", "./fixture-ghost.mjs"]
+files = ["./fixture-dep.mjs", "./fixture-svc.mjs", "./fixture-a.mjs", "./fixture-ghost.mjs"]
 
 [plugin.config]
-
-[service]
-files = []
 
 [service.config]
 `, 'utf8');
@@ -129,6 +155,24 @@ test('daemon and CLI cover start, plugin commands and stop over IPC', { timeout:
     // 启动时装载并启用 fixture-a；缺失依赖的 fixture-ghost 挂起等待（主体不执行）。
     assert.ok(fs.existsSync(marker('fixture-a.mounted')), 'fixture-a mounted at startup');
     assert.ok(!fs.existsSync(marker('fixture-ghost.mounted')), 'fixture-ghost suspended at startup');
+
+    // 服务即插件：fixture-svc 经 plugin.files 装载并随 app.start 启动其共享服务；
+    // fixture-dep 在安装序上先于服务出现（挂起），服务就绪后自动执行并启用。
+    assert.ok(fs.existsSync(marker('fixture-svc.started')), 'fixture-svc started at startup');
+    assert.equal(fs.readFileSync(marker('fixture-dep.log'), 'utf8'), 'start\n');
+
+    // disable 服务插件：共享服务停止并摘除，依赖方级联自动停止。
+    const disableSvc = await command(['plugin', 'disable', 'fixture-svc']);
+    assert.equal(disableSvc.ok, true, disableSvc.message);
+    assert.ok(fs.existsSync(marker('fixture-svc.stopped')), 'fixture-svc stopped');
+    assert.equal(fs.readFileSync(marker('fixture-dep.log'), 'utf8'), 'start\nstop\n');
+    const waitingList = await command(['plugin', 'list']);
+    assert.match(waitingList.message ?? '', /fixture-dep \(waiting: demo-svc\)/);
+
+    // 重新启用服务插件：依赖方自动恢复。
+    const enableSvc = await command(['plugin', 'enable', 'fixture-svc']);
+    assert.equal(enableSvc.ok, true, enableSvc.message);
+    assert.equal(fs.readFileSync(marker('fixture-dep.log'), 'utf8'), 'start\nstop\nstart\n');
 
     // enable：缺失依赖不再拒绝，标记期望启用并报告等待中的依赖。
     const ghost = await command(['plugin', 'enable', 'fixture-ghost']);

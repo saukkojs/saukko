@@ -43,9 +43,11 @@ export type Config = {
             [key in keyof PluginConfigRegistry]?: PluginConfigRegistry[key];
         };
     };
+    /**
+     * 服务配置节。0.2 起"服务即插件"：服务包经 `plugin.files` / 插件依赖扫描装载，
+     * `service.files` / `service.scopes` 已废弃；本节仅保留核心服务的配置（如 storage）。
+     */
     service: {
-        scopes?: string[];
-        files?: string[];
         config: {
             [key in keyof ServiceConfigRegistry]?: ServiceConfigRegistry[key];
         };
