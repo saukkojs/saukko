@@ -63,7 +63,7 @@ export class PluginService {
     private bots: Array<Bot> = [];
     private sharedEventListeners: SharedEventListeners = new Map();
     private readonly rootScope: Scope;
-    private readonly watchers = new Map<string, { count: number; offReplace: () => void; offAdd: () => void }>();
+    private readonly watchers = new Map<string, { count: number; offReplace: () => void; offAdd: () => void; offRemove: () => void }>();
 
     constructor(
         private logger: LoggerService,
@@ -332,6 +332,8 @@ export class PluginService {
         }
         this.plugins.delete(name);
         this.logger.log('plugin', 'info', `- ${name}`);
+        // 被依赖的插件卸载后，其依赖方级联停止（等待重装恢复）。
+        await this.cascadeDisable(name);
     }
 
     private watchDependency(name: string) {
@@ -342,7 +344,8 @@ export class PluginService {
         }
         const offReplace = this.rootScope.onReplace(name, (changed) => this.restartDependents(changed));
         const offAdd = this.rootScope.onAdd(name, () => this.resolveWaiting());
-        this.watchers.set(name, { count: 1, offReplace, offAdd });
+        const offRemove = this.rootScope.onRemove(name, (removed) => this.cascadeDisable(removed));
+        this.watchers.set(name, { count: 1, offReplace, offAdd, offRemove });
     }
 
     private unwatchDependency(name: string) {
@@ -352,8 +355,82 @@ export class PluginService {
         if (existing.count <= 0) {
             existing.offReplace();
             existing.offAdd();
+            existing.offRemove();
             this.watchers.delete(name);
         }
+    }
+
+    /**
+     * 依赖消失级联：依赖 lost 的已启用插件自动停止（传递依赖一并级联），
+     * 按依赖拓扑逆序执行。自动停止**保留期望启用标记**——属于"等待依赖"而非用户
+     * 主动禁用；依赖恢复（重新 share / 重新 install）后由等待迁移自动按拓扑正序重启。
+     * 可等待；单个插件停止失败不阻断其余级联，失败汇总抛出。
+     */
+    private async cascadeDisable(lost: string) {
+        const affected = new Set<string>();
+        let grew = true;
+        while (grew) {
+            grew = false;
+            for (const [name, plugin] of this.plugins) {
+                if (affected.has(name)) continue;
+                const deps = plugin.module.inject || [];
+                if (deps.some((dep) => dep === lost || affected.has(dep as string))) {
+                    affected.add(name);
+                    grew = true;
+                }
+            }
+        }
+        if (affected.size === 0) return;
+
+        // 依赖已消失，诊断序列不再包含受影响插件，停止顺序需自行推导：
+        // 受影响子图上按"没有未停止的受影响依赖方"逐轮摘取（叶子优先），即拓扑逆序。
+        const dependentsOf = new Map<string, Set<string>>();
+        for (const name of affected) dependentsOf.set(name, new Set());
+        for (const name of affected) {
+            for (const dep of this.plugins.get(name)!.module.inject || []) {
+                if (affected.has(dep as string)) dependentsOf.get(dep as string)!.add(name);
+            }
+        }
+        const enabled = (name: string) => this.plugins.get(name)?.enabled === true;
+        const pending = new Set([...affected].filter(enabled));
+        const stopOrder: string[] = [];
+        while (pending.size > 0) {
+            const leaves = [...pending].filter((name) =>
+                [...dependentsOf.get(name)!].every((dependent) => !pending.has(dependent)));
+            // 循环依赖等异常形态兜底：按剩余顺序停止。
+            if (leaves.length === 0) {
+                stopOrder.push(...pending);
+                break;
+            }
+            for (const leaf of leaves) {
+                stopOrder.push(leaf);
+                pending.delete(leaf);
+            }
+        }
+
+        const errors: unknown[] = [];
+        for (const name of stopOrder) {
+            const plugin = this.plugins.get(name);
+            if (!plugin || !plugin.context) continue;
+            try {
+                await plugin.context.lifecycle.stop();
+                plugin.enabled = false;
+                plugin.missing = this.computeMissing(plugin.module);
+                this.logger.log('plugin', 'info', `Plugin ${name} auto-stopped: dependency ${lost} was removed, waiting for recovery.`);
+            } catch (error) {
+                errors.push(error);
+                this.logger.log('plugin', 'error', `Failed to auto-stop plugin ${name} after dependency ${lost} was removed.`, error);
+            }
+        }
+        // 未启用但受影响的插件同样刷新缺失清单（等待状态可诊断）。
+        for (const name of affected) {
+            const plugin = this.plugins.get(name);
+            if (plugin && !plugin.enabled) {
+                plugin.missing = this.computeMissing(plugin.module);
+            }
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) throw new AggregateError(errors, `Failed to cascade-stop plugins after ${lost} was removed.`);
     }
 
     /**
