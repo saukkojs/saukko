@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Logger } from '@cocotais/logger';
 import { DaemonMessage, DaemonResponse, SaukkoEnv } from './types';
 import fs from 'fs';
