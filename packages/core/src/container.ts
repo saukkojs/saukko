@@ -18,6 +18,10 @@ export interface ServiceRegistry {
     storage: StorageService;
 }
 
+/**
+ * @deprecated 0.2 起仅作过渡空壳保留，新代码请使用 `Scope` / `Context.provide`。
+ * 该类型将在下一个版本删除。
+ */
 export class Container {
     private factories = new Map<string, () => any>();
     private instances = new Map<string, any>();
