@@ -375,3 +375,43 @@ test('get preserves ServiceRegistry typing for known keys and falls back otherwi
     assert.equal(logger, undefined);
     assert.equal(wrong, undefined);
 });
+
+test('onAdd listeners fire only when a name is newly provided and are awaited', async () => {
+    const root = createScope();
+    const calls: string[] = [];
+    root.onAdd('svc', async (name) => {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        calls.push(`add-${name}`);
+    });
+    root.onReplace('svc', (name) => {
+        calls.push(`replace-${name}`);
+    });
+
+    // set/register 保持纯登记语义，不触发联动。
+    root.set('other', 1);
+    root.register('lazy', () => ({}));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, []);
+
+    // 新增登记触发 onAdd，且 provide 等待监听器完成。
+    await root.provide('svc', { v: 1 });
+    assert.deepEqual(calls, ['add-svc']);
+
+    // 覆盖已有登记走 onReplace 而非 onAdd。
+    await root.provide('svc', { v: 2 });
+    assert.deepEqual(calls, ['add-svc', 'replace-svc']);
+
+    await root.dispose();
+});
+
+test('a failing onAdd listener rejects the provide call', async () => {
+    const root = createScope();
+    root.onAdd('svc', () => {
+        throw new Error('add failed');
+    });
+
+    await assert.rejects(root.provide('svc', {}), /add failed/);
+    // 服务本身已完成登记，失败只来自联动侧。
+    assert.ok(root.has('svc'));
+    await root.dispose();
+});

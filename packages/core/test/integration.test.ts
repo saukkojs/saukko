@@ -62,7 +62,7 @@ test('full assembly starts and stops plugins through the real scope tree', async
     await track('base-ext', ['ext-svc']);
     await track('uses-storage', ['storage']);
     await track('top', ['base-ext']);
-    // 缺失依赖的插件应被诊断跳过，不影响其余插件。
+    // 缺失依赖的插件挂起等待（主体不执行），不影响其余插件。
     await track('broken', ['ghost-svc']);
 
     let storageValue: string | null = null;
@@ -80,24 +80,22 @@ test('full assembly starts and stops plugins through the real scope tree', async
 
     assert.equal(storageValue, 'yes');
     assert.equal(plugin.map().get('broken')?.enabled, false);
+    // broken 主体被挂起：未产生 Context，也未注册任何钩子。
+    assert.equal(contexts.has('broken'), false);
+    assert.deepEqual(plugin.map().get('broken')?.missing, ['ghost-svc']);
     // 拓扑序：base-ext 先于 top；其余相对顺序不限。
     // （storage-writer 未挂事件追踪，只验证存储副作用。）
     const started = events.filter((event) => event.startsWith('start-'));
     assert.equal(started.length, 3);
     assert.ok(started.indexOf('start-base-ext') < started.indexOf('start-top'));
     for (const [name, context] of contexts) {
-        // 未启用的 broken 保持 PENDING（主体已执行，onStart 未触发）；其余为 ACTIVE。
-        const expected = name === 'broken' ? LifecycleState.PENDING : LifecycleState.ACTIVE;
-        assert.equal(context.scope.lifecycle.state, expected, name);
+        assert.equal(context.scope.lifecycle.state, LifecycleState.ACTIVE, name);
     }
 
     await app.stop();
 
     const stopped = events.filter((event) => event.startsWith('stop-'));
-    // 3 个已启用插件按拓扑逆序停止；broken 虽未启用，但其主体在 install 时已执行，
-    // 应用停止的卸载流程同样销毁其子作用域，onStop 清理照常运行。
-    assert.equal(stopped.length, 4);
-    assert.ok(stopped.includes('stop-broken'));
+    assert.equal(stopped.length, 3);
     // 停止为启动拓扑的逆序：top 先于 base-ext。
     assert.ok(stopped.indexOf('stop-top') < stopped.indexOf('stop-base-ext'));
     for (const [name, context] of contexts) {

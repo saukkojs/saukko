@@ -10,17 +10,25 @@ export class App {
         this.logger.log('app', 'info', 'Starting app...');
         const data = pluginDependencyDiagnose(this.plugin, this.scope);
         if (data.issues.length > 0) {
-            this.logger.log('app', 'warn', 'Plugin dependency issues detected, and they are skipped to load:');
             for (const issue of data.issues) {
                 if (issue.type === 'missing-dependency') {
-                    this.logger.log('app', 'warn', `- Plugin ${issue.plugin} is missing dependencies: ${issue.details.join(', ')}`);
+                    // 缺失依赖是暂时状态：插件挂起等待，依赖补齐后自动执行并启动。
+                    this.logger.log('app', 'info', `- Plugin ${issue.plugin} is waiting for dependencies: ${issue.details.join(', ')}`);
                 } else if (issue.type === 'circular-dependency') {
-                    this.logger.log('app', 'warn', `- Plugin ${issue.plugin} has circular dependencies: ${issue.details.join(' -> ')}`);
+                    // 循环依赖是硬错误：无法通过等待解决，不启动也不标记期望启用。
+                    this.logger.log('app', 'error', `- Plugin ${issue.plugin} has circular dependencies and will not start: ${issue.details.join(' -> ')}`);
                 }
             }
         }
+        // 先按拓扑序启动依赖就绪的插件。
         for (const pluginName of data.order) {
             await this.plugin.apply(pluginName);
+        }
+        // 等待依赖的插件标记为期望启用：依赖补齐后自动执行主体并启动。
+        for (const issue of data.issues) {
+            if (issue.type === 'missing-dependency') {
+                await this.plugin.apply(issue.plugin);
+            }
         }
         this.logger.log('app', 'info', `App started, ${data.order.length} plugins applied.`);
     }

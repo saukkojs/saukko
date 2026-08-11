@@ -47,9 +47,15 @@ export type PluginLike = PluginType | PluginFunction | PluginClass | PluginObjec
 export interface PluginMapItem {
     name: string;
     module: PluginType;
-    context: PluginContext;
+    /** 依赖就绪、主体执行后才存在；等待依赖期间为 undefined。 */
+    context: PluginContext | undefined;
     config: Record<string, any> | undefined;
+    /** 实际运行中（子作用域生命周期 ACTIVE）。 */
     enabled: boolean;
+    /** 期望启用：enable 标记；依赖就绪且主体执行完成后自动启动。 */
+    desired: boolean;
+    /** 当前缺失的依赖清单；为空表示依赖就绪。 */
+    missing: string[];
 }
 
 export class PluginService {
@@ -57,7 +63,7 @@ export class PluginService {
     private bots: Array<Bot> = [];
     private sharedEventListeners: SharedEventListeners = new Map();
     private readonly rootScope: Scope;
-    private readonly replaceWatchers = new Map<string, { count: number; off: () => void }>();
+    private readonly watchers = new Map<string, { count: number; offReplace: () => void; offAdd: () => void }>();
 
     constructor(
         private logger: LoggerService,
@@ -70,9 +76,10 @@ export class PluginService {
     }
 
     /**
-     * 安装插件：派生子作用域、构造 Context 并**立即执行插件主体**
-     * （注册钩子、监听与服务提升均在此时完成）。enable/disable 只是
-     * 触发子作用域生命周期的 start/stop 开关，主体不会重复执行。
+     * 安装插件：依赖就绪则派生子作用域并**立即执行插件主体**
+     * （注册钩子、监听与服务提升均在此时完成）；依赖缺失则挂起主体，
+     * 插件进入"等待依赖"状态，依赖补齐后自动执行。
+     * enable/disable 只是触发子作用域生命周期的 start/stop 开关，主体不会重复执行。
      * 主体执行失败时销毁子作用域且不留记录，重试即重新 install。
      */
     async install(plugin: PluginLike) {
@@ -82,50 +89,110 @@ export class PluginService {
             this.logger.log('plugin', 'notice', 'In current version, creating multiple instances for a plugin is not supported.');
             return;
         }
-        const dependencies = pluginModule.inject || [];
-        let missingDeps = [];
-        for (const dep of dependencies) {
-            // 依赖可以是作用域服务，也可以是已安装的插件（仅约束顺序）。
-            if (!(this.rootScope.has(dep)) && !(this.plugins.has(dep as string))) {
-                missingDeps.push(dep);
-                continue;
+        const item: PluginMapItem = {
+            name: pluginModule.name,
+            module: pluginModule,
+            context: undefined,
+            config: undefined,
+            enabled: false,
+            desired: false,
+            missing: this.computeMissing(pluginModule),
+        };
+        if (item.missing.length === 0) {
+            // 依赖就绪：立即执行主体；失败时销毁子作用域、不登记插件记录。
+            await this.mount(item);
+        }
+        this.plugins.set(item.name, item);
+        // 监听插件声明的依赖：服务被 provide 新增时解除等待，被覆盖时联动重启。
+        // 插件名形式的依赖不会被 provide 触发，登记无害。
+        for (const dep of pluginModule.inject || []) {
+            this.watchDependency(dep as string);
+        }
+        if (item.missing.length > 0) {
+            this.logger.log('plugin', 'info', `Plugin ${item.name} installed, waiting for dependencies: ${item.missing.join(', ')}`);
+        }
+        this.logger.log('plugin', 'info', `+ ${item.name}`);
+        // 本插件的登记可能解除其他插件的等待（插件依赖以"已安装"为就绪判据）。
+        await this.resolveWaiting();
+    }
+
+    /** 计算插件当前缺失的依赖：服务依赖看根作用域可读，插件依赖看已安装（记录存在）。 */
+    private computeMissing(pluginModule: PluginType): string[] {
+        const missing: string[] = [];
+        for (const dep of pluginModule.inject || []) {
+            if (!this.rootScope.has(dep) && !this.plugins.has(dep as string)) {
+                missing.push(dep as string);
             }
         }
-        if (missingDeps.length > 0) {
-            this.logger.log('plugin', 'warn', `Plugin ${pluginModule.name}: Dependency ${missingDeps.join(', ')} missing when intalling`);
-        }
+        return missing;
+    }
+
+    /** 执行插件主体：派生子作用域、构造 Context 并运行；失败时销毁子作用域并上抛。 */
+    private async mount(plugin: PluginMapItem) {
         // 注入快照仅作兼容的 dependencies 记录；实际读取沿作用域父链完成，
-        // 不再写入子作用域（父链全量可读已覆盖，且服务替换后读取始终最新）。
+        // 不写入子作用域（父链全量可读已覆盖，且服务替换后读取始终最新）。
         const injections: Record<string, any> = {};
-        for (const dep of dependencies) {
+        for (const dep of plugin.module.inject || []) {
             if (this.rootScope.has(dep)) {
                 injections[dep] = this.rootScope.get(dep);
             }
         }
         const pluginConfig = (this.config.get('plugin.config') as Record<string, any>) || {};
-        const currentConfig = pluginConfig[pluginModule.name] || {};
+        const currentConfig = pluginConfig[plugin.name] || {};
         const scope = this.rootScope.fork();
         const context = new PluginContext(scope, injections, currentConfig, this.bots, this.sharedEventListeners);
         try {
-            await pluginModule.default(context);
+            await plugin.module.default(context);
         } catch (error) {
-            // 主体执行失败：销毁子作用域、不登记插件记录，重试即重新 install。
             await scope.dispose();
             throw error;
         }
-        this.plugins.set(pluginModule.name, {
-            name: pluginModule.name,
-            module: pluginModule,
-            context,
-            config: currentConfig,
-            enabled: false
-        });
-        // 监听插件声明的依赖：根作用域上同名服务被 provide 覆盖时联动重启。
-        // 插件名形式的依赖不会被 provide 触发，登记无害。
-        for (const dep of dependencies) {
-            this.watchDependency(dep as string);
+        plugin.context = context;
+        plugin.config = currentConfig;
+    }
+
+    /**
+     * 依赖状态变化后的等待迁移：刷新全部插件的缺失清单，
+     * 按诊断拓扑序执行就绪插件的挂起主体，并自动启动此前被标记为期望启用的插件。
+     * 可等待；主体执行失败时摘除该插件记录（与 install 失败一致），失败汇总抛出。
+     */
+    private async resolveWaiting() {
+        for (const plugin of this.plugins.values()) {
+            plugin.missing = this.computeMissing(plugin.module);
         }
-        this.logger.log('plugin', 'info', `+ ${pluginModule.name}`);
+        // 诊断拓扑序只包含依赖就绪的插件：挂起主体的执行顺序同样服从拓扑。
+        const ready = pluginDependencyDiagnose(this, this.rootScope).order;
+        const errors: unknown[] = [];
+        for (const name of ready) {
+            const plugin = this.plugins.get(name);
+            if (!plugin) continue;
+            if (!plugin.context) {
+                try {
+                    await this.mount(plugin);
+                    this.logger.log('plugin', 'info', `Plugin ${name}: dependencies ready, mounted`);
+                } catch (error) {
+                    errors.push(error);
+                    this.logger.log('plugin', 'error', `Plugin ${name} failed to mount after dependencies became ready.`, error);
+                    for (const dep of plugin.module.inject || []) {
+                        this.unwatchDependency(dep as string);
+                    }
+                    this.plugins.delete(name);
+                    continue;
+                }
+            }
+            if (plugin.desired && !plugin.enabled) {
+                try {
+                    await plugin.context!.lifecycle.start();
+                    plugin.enabled = true;
+                    this.logger.log('plugin', 'info', `A ${name}`);
+                } catch (error) {
+                    errors.push(error);
+                    this.logger.log('plugin', 'error', `Plugin ${name} failed to start after dependencies became ready.`, error);
+                }
+            }
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) throw new AggregateError(errors, 'Failed to resume waiting plugins.');
     }
 
     /**
@@ -171,7 +238,10 @@ export class PluginService {
         throw new Error(`插件格式不正确：必须是 { name, default } 模块、函数、类或含 apply 方法的对象，得到 ${typeof plugin}`);
     }
 
-    /** 启用插件：触发子作用域生命周期的 start（执行 onStart 钩子）。 */
+    /**
+     * 启用插件：依赖就绪则触发子作用域生命周期的 start（执行 onStart 钩子）；
+     * 依赖缺失则标记为期望启用，依赖补齐后自动执行主体并启动。
+     */
     async apply(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
@@ -182,37 +252,36 @@ export class PluginService {
             this.logger.log('plugin', 'error', `Plugin ${name} is already applied`);
             return;
         }
-        const dependencies = plugin.module.inject || [];
-        let missingDeps = [];
-        for (const dep of dependencies) {
-            if (this.rootScope.has(dep)) continue;
-            // 插件间依赖仅约束启动顺序，无服务实例可注入。
-            if (this.plugins.has(dep as string)) continue;
-            missingDeps.push(dep);
-        }
-        if (missingDeps.length > 0) {
-            this.logger.log('plugin', 'error', `Cannot apply plugin ${name}: Dependency ${missingDeps.join(', ')} not found`);
+        plugin.desired = true;
+        plugin.missing = this.computeMissing(plugin.module);
+        if (plugin.missing.length > 0) {
+            this.logger.log('plugin', 'info', `Plugin ${name} is expected to be enabled, waiting for dependencies: ${plugin.missing.join(', ')}`);
             return;
         }
+        // 等待中解除但主体尚未执行（如依赖经 set/register 静默补齐）时补执行。
+        if (!plugin.context) {
+            await this.mount(plugin);
+        }
         // 启动失败时生命周期进入 FAILED（清理已执行），插件保持未启用，可重试。
-        await plugin.context.lifecycle.start();
+        await plugin.context!.lifecycle.start();
         plugin.enabled = true;
         this.logger.log('plugin', 'info', `A ${name}`);
     }
 
-    /** 禁用插件：触发子作用域生命周期的 stop（执行 onStop 钩子），作用域不销毁。 */
+    /** 禁用插件：取消期望启用标记；已运行的触发子作用域生命周期的 stop，作用域不销毁。 */
     async dispose(name: string) {
         const plugin = this.plugins.get(name);
         if (!plugin) {
             this.logger.log('plugin', 'error', `Cannot dispose plugin ${name}: not found`);
             return;
         }
+        plugin.desired = false;
         if (!plugin.enabled) {
             this.logger.log('plugin', 'error', `Plugin ${name} is not enabled, dispose skipped`);
             return;
         }
         try {
-            await plugin.context.lifecycle.stop();
+            await plugin.context!.lifecycle.stop();
         } finally {
             plugin.enabled = false;
             this.logger.log('plugin', 'info', `D ${name}`);
@@ -229,7 +298,9 @@ export class PluginService {
         if (plugin.enabled) {
             await this.dispose(name);
         }
-        await plugin.context.dispose();
+        if (plugin.context) {
+            await plugin.context.dispose();
+        }
         for (const dep of plugin.module.inject || []) {
             this.unwatchDependency(dep as string);
         }
@@ -238,22 +309,24 @@ export class PluginService {
     }
 
     private watchDependency(name: string) {
-        const existing = this.replaceWatchers.get(name);
+        const existing = this.watchers.get(name);
         if (existing) {
             existing.count += 1;
             return;
         }
-        const off = this.rootScope.onReplace(name, (changed) => this.restartDependents(changed));
-        this.replaceWatchers.set(name, { count: 1, off });
+        const offReplace = this.rootScope.onReplace(name, (changed) => this.restartDependents(changed));
+        const offAdd = this.rootScope.onAdd(name, () => this.resolveWaiting());
+        this.watchers.set(name, { count: 1, offReplace, offAdd });
     }
 
     private unwatchDependency(name: string) {
-        const existing = this.replaceWatchers.get(name);
+        const existing = this.watchers.get(name);
         if (!existing) return;
         existing.count -= 1;
         if (existing.count <= 0) {
-            existing.off();
-            this.replaceWatchers.delete(name);
+            existing.offReplace();
+            existing.offAdd();
+            this.watchers.delete(name);
         }
     }
 
@@ -314,11 +387,15 @@ export class PluginService {
     map() {
         let list: Map<string, {
             enabled: boolean;
+            desired: boolean;
+            missing: string[];
             inject?: readonly (keyof ServiceRegistry)[];
         }> = new Map();
         this.plugins.forEach((plugin) => {
             list.set(plugin.name, {
                 enabled: plugin.enabled,
+                desired: plugin.desired,
+                missing: [...plugin.missing],
                 inject: plugin.module.inject
             })
         })

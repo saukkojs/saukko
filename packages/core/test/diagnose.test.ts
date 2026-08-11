@@ -59,9 +59,8 @@ test('re-diagnosing after a dynamic service registration clears the missing depe
     assert.deepEqual(after.order, ['late-bound']);
     assert.deepEqual(after.issues, []);
 
+    // register 静默补齐依赖（不触发联动）：apply 时重新诊断，补执行挂起的主体。
     await plugin.apply('late-bound');
-    // 主体在 install 时已执行（当时依赖缺失）；读取沿父链动态解析，
-    // 依赖补齐后随时可读到新服务。
     assert.equal(context.get('late-svc'), service);
 });
 

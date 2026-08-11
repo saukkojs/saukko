@@ -48,8 +48,10 @@ export interface PluginDiagnosisResult {
 /**
  * 诊断插件依赖并给出启动拓扑序。
  *
- * 服务清单以作用域为准（`scope.list()`，含容器后备）：
+ * 服务清单以作用域为准（`scope.list()`）：
  * 依赖名命中作用域登记视为服务依赖，命中已安装插件视为插件依赖，否则记为缺失。
+ * 缺失依赖的插件视为"等待中"（依赖补齐后可自动迁移），排除出启动序列并报告原因；
+ * 循环依赖为硬错误（无法通过等待解决），同样排除出启动序列。
  */
 export function pluginDependencyDiagnose(service: PluginService, scope: Scope): PluginDiagnosisResult {
     const plugins = service.map();

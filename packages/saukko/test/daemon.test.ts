@@ -126,21 +126,23 @@ test('daemon and CLI cover start, plugin commands and stop over IPC', { timeout:
     }
     assert.ok(ready, 'daemon should become ready');
 
-    // 启动时装载并启用 fixture-a；缺失依赖的 fixture-ghost 被诊断跳过。
+    // 启动时装载并启用 fixture-a；缺失依赖的 fixture-ghost 挂起等待（主体不执行）。
     assert.ok(fs.existsSync(marker('fixture-a.mounted')), 'fixture-a mounted at startup');
-    assert.ok(!fs.existsSync(marker('fixture-ghost.mounted')), 'fixture-ghost skipped at startup');
+    assert.ok(!fs.existsSync(marker('fixture-ghost.mounted')), 'fixture-ghost suspended at startup');
 
-    // enable：缺失依赖的插件被拒绝并给出原因（3.5 补的诊断缺口）。
+    // enable：缺失依赖不再拒绝，标记期望启用并报告等待中的依赖。
     const ghost = await command(['plugin', 'enable', 'fixture-ghost']);
-    assert.equal(ghost.ok, false);
-    assert.match(ghost.message ?? '', /缺失依赖 ghost-svc/);
+    assert.equal(ghost.ok, true);
+    assert.match(ghost.message ?? '', /等待依赖: ghost-svc/);
+    assert.ok(!fs.existsSync(marker('fixture-ghost.mounted')), 'fixture-ghost still suspended');
 
-    // install + enable：动态装载插件并启用。
+    // install + enable：动态装载插件并启用（install 即执行主体）。
     const install = await command(['plugin', 'install', './fixture-b.mjs']);
     assert.equal(install.ok, true, install.message);
+    assert.ok(fs.existsSync(marker('fixture-b.mounted')), 'fixture-b mounted at install');
     const enable = await command(['plugin', 'enable', 'fixture-b']);
     assert.equal(enable.ok, true, enable.message);
-    assert.ok(fs.existsSync(marker('fixture-b.mounted')), 'fixture-b mounted after enable');
+    assert.match(enable.message ?? '', /已启用插件 fixture-b/);
 
     // disable：等待清理完成，标记文件落盘。
     const disable = await command(['plugin', 'disable', 'fixture-a']);
@@ -150,8 +152,9 @@ test('daemon and CLI cover start, plugin commands and stop over IPC', { timeout:
     // 经真实 CLI 进程查询列表。
     const list = await runCli(['plugin', 'list'], env, dir);
     assert.equal(list.code, 0);
-    assert.match(list.output, /fixture-b/);
-    assert.match(list.output, /fixture-a/);
+    assert.match(list.output, /fixture-b \(enabled\)/);
+    assert.match(list.output, /fixture-a \(disabled\)/);
+    assert.match(list.output, /fixture-ghost \(waiting: ghost-svc\)/);
 
     // uninstall：从列表移除。
     const uninstall = await command(['plugin', 'uninstall', 'fixture-b']);

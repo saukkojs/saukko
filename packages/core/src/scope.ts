@@ -72,6 +72,14 @@ export interface Scope {
     provide<T>(name: string, service: T): Promise<T>;
 
     /**
+     * 监听本作用域指定资源的新增登记：当该名称由未登记变为已登记时触发，
+     * 按登记顺序逐个等待监听器完成。返回取消监听的函数。
+     * 仅 `provide` 触发；`set`/`register` 保持纯登记语义，不触发联动；
+     * 覆盖已有登记走 `onReplace` 而非本监听。作用域销毁后监听自动失效。
+     */
+    onAdd(name: string, listener: (name: string) => Awaitable<void>): () => void;
+
+    /**
      * 监听本作用域指定资源的替换：`provide` 覆盖本作用域同名已登记资源时，
      * 新服务就绪后按登记顺序逐个等待监听器完成。返回取消监听的函数。
      * 仅 `provide` 触发；`set`/`register` 保持纯登记语义，不触发联动。
@@ -154,6 +162,7 @@ class ScopeNode implements Scope {
         offStart?: () => void;
         offStop?: () => void;
     }>();
+    private readonly addListeners = new Map<string, Array<(name: string) => Awaitable<void>>>();
     private readonly replaceListeners = new Map<string, Array<(name: string) => Awaitable<void>>>();
     private readonly children: ScopeNode[] = [];
     private parentNode: ScopeNode | undefined;
@@ -273,7 +282,22 @@ class ScopeNode implements Scope {
         }
 
         if (replacing) await this.notifyReplace(name);
+        else await this.notifyAdd(name);
         return service;
+    }
+
+    onAdd(name: string, listener: (name: string) => Awaitable<void>): () => void {
+        this.assertAlive('watch a service addition');
+        let listeners = this.addListeners.get(name);
+        if (!listeners) {
+            listeners = [];
+            this.addListeners.set(name, listeners);
+        }
+        listeners.push(listener);
+        return () => {
+            const index = listeners.indexOf(listener);
+            if (index !== -1) listeners.splice(index, 1);
+        };
     }
 
     onReplace(name: string, listener: (name: string) => Awaitable<void>): () => void {
@@ -288,6 +312,21 @@ class ScopeNode implements Scope {
             const index = listeners.indexOf(listener);
             if (index !== -1) listeners.splice(index, 1);
         };
+    }
+
+    private async notifyAdd(name: string) {
+        const listeners = this.addListeners.get(name);
+        if (!listeners || listeners.length === 0) return;
+        const errors: unknown[] = [];
+        for (const listener of [...listeners]) {
+            try {
+                await listener(name);
+            } catch (error) {
+                errors.push(error);
+            }
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length > 1) throw new AggregateError(errors, 'Multiple service addition listeners failed.');
     }
 
     private async notifyReplace(name: string) {
@@ -333,6 +372,7 @@ class ScopeNode implements Scope {
         }
         this.resources.clear();
         this.providedServices.clear();
+        this.addListeners.clear();
         this.replaceListeners.clear();
         this.detach();
         if (errors.length === 1) throw errors[0];

@@ -169,24 +169,32 @@ async function handleMessage(message: DaemonMessage, socket: net.Socket, app: Ap
 					if (pluginService.map().has(rest[1]) === false) {
 						throw new Error(`未找到插件 ${rest[1]}，可能未安装`);
 					}
-					// 动态启用前重新诊断依赖：缺失或循环依赖的插件拒绝启用。
+					// 动态启用前重新诊断依赖：循环依赖为硬错误，拒绝启用；
+					// 缺失依赖转为等待语义，标记期望启用后由框架自动启动。
 					const diagnosis = pluginDependencyDiagnose(pluginService, scope);
 					const issue = diagnosis.issues.find((item) => item.plugin === rest[1]);
-					if (issue) {
-						throw new Error(issue.type === 'missing-dependency'
-							? `无法启用插件 ${rest[1]}：缺失依赖 ${issue.details.join(', ')}`
-							: `无法启用插件 ${rest[1]}：存在循环依赖 ${issue.details.join(' -> ')}`);
+					if (issue?.type === 'circular-dependency') {
+						throw new Error(`无法启用插件 ${rest[1]}：存在循环依赖 ${issue.details.join(' -> ')}`);
 					}
 					await pluginService.apply(rest[1]);
-					logger.info(`已通过 IPC 启用插件 ${rest[1]}`);
-					const response: DaemonResponse = { ok: true, message: `已启用插件 ${rest[1]}` };
+					const item = pluginService.map().get(rest[1])!;
+					const message = item.enabled
+						? `已启用插件 ${rest[1]}`
+						: `插件 ${rest[1]} 已标记为期望启用，正在等待依赖: ${item.missing.join(', ')}`;
+					logger.info(`已通过 IPC 处理插件启用请求`, rest[1], message);
+					const response: DaemonResponse = { ok: true, message };
 					socket.write(JSON.stringify(response) + '\n');
 					return;
 				}
 				if (rest[0] === 'list') {
-					const pluginList = Array.from(pluginService.map().keys());
-					logger.info('已通过 IPC 列出插件列表', pluginList);
-					const response: DaemonResponse = { ok: true, message: `已安装插件列表: ${pluginList.join(', ')}` };
+					// 列表展示运行状态：enabled / waiting（含等待的依赖）/ disabled。
+					const entries = Array.from(pluginService.map().entries()).map(([name, item]) => {
+						if (item.enabled) return `${name} (enabled)`;
+						if (item.missing.length > 0) return `${name} (waiting: ${item.missing.join(', ')})`;
+						return `${name} (disabled)`;
+					});
+					logger.info('已通过 IPC 列出插件列表', entries);
+					const response: DaemonResponse = { ok: true, message: `已安装插件列表: ${entries.join(', ')}` };
 					socket.write(JSON.stringify(response) + '\n');
 					return;
 				}
