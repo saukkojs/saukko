@@ -1,5 +1,5 @@
 import { Logger } from '@cocotais/logger';
-import { App, Config, Container, PluginService, Scope, createContainerScope, injectionProvider } from '@saukkojs/core';
+import { App, Config, Container, PluginService, Scope, createContainerScope, injectionProvider, pluginDependencyDiagnose } from '@saukkojs/core';
 import toml from 'smol-toml';
 import fs from 'fs';
 import net from 'net';
@@ -164,6 +164,14 @@ async function handleMessage(message: DaemonMessage, socket: net.Socket, app: Ap
 				if (rest[0] === 'enable') {
 					if (pluginService.map().has(rest[1]) === false) {
 						throw new Error(`未找到插件 ${rest[1]}，可能未安装`);
+					}
+					// 动态启用前重新诊断依赖：缺失或循环依赖的插件拒绝启用。
+					const diagnosis = pluginDependencyDiagnose(pluginService, scope);
+					const issue = diagnosis.issues.find((item) => item.plugin === rest[1]);
+					if (issue) {
+						throw new Error(issue.type === 'missing-dependency'
+							? `无法启用插件 ${rest[1]}：缺失依赖 ${issue.details.join(', ')}`
+							: `无法启用插件 ${rest[1]}：存在循环依赖 ${issue.details.join(' -> ')}`);
 					}
 					await pluginService.apply(rest[1]);
 					logger.info(`已通过 IPC 启用插件 ${rest[1]}`);

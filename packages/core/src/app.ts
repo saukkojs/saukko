@@ -1,16 +1,14 @@
-import type { Container } from './container';
 import type { LoggerService } from './services/logger';
 import type { PluginService } from './services/plugin';
+import type { Scope } from './scope';
 import { pluginDependencyDiagnose } from './utils';
 
 export class App {
-    static inject = ['logger', 'container', 'plugin'] as const;
-
-    constructor(private logger: LoggerService, private container: Container, private plugin: PluginService) {}
+    constructor(private logger: LoggerService, private plugin: PluginService, private scope: Scope) {}
 
     async start() {
         this.logger.log('app', 'info', 'Starting app...');
-        const data = pluginDependencyDiagnose(this.plugin, this.container);
+        const data = pluginDependencyDiagnose(this.plugin, this.scope);
         if (data.issues.length > 0) {
             this.logger.log('app', 'warn', 'Plugin dependency issues detected, and they are skipped to load:');
             for (const issue of data.issues) {
@@ -32,7 +30,7 @@ export class App {
         const plugins = this.plugin.map();
         const enabled = (name: string) => plugins.get(name)?.enabled === true;
         // 停止顺序取启动拓扑顺序的逆序：依赖方先停止，与作用域“先子后父”的销毁顺序一致。
-        const diagnosis = pluginDependencyDiagnose(this.plugin, this.container);
+        const diagnosis = pluginDependencyDiagnose(this.plugin, this.scope);
         const stopOrder = diagnosis.order.filter(enabled).reverse();
         // 未进入启动序列（如有依赖问题被跳过）但已启用的插件，排在最后兜底停止。
         for (const name of plugins.keys()) {

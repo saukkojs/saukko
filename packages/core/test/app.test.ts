@@ -3,6 +3,7 @@ import test from 'node:test';
 import { App } from '../src/app';
 import type { Container } from '../src/container';
 import { LifecycleState } from '../src/lifecycle';
+import { createContainerScope, type Scope } from '../src/scope';
 import type { ConfigService } from '../src/services/config';
 import type { LoggerService } from '../src/services/logger';
 import { PluginContext, PluginService } from '../src/services/plugin';
@@ -23,7 +24,7 @@ test('App stops every enabled plugin when one plugin cleanup fails', async () =>
     const logger = {
         log: (...args: unknown[]) => logs.push(args),
     } as unknown as LoggerService;
-    const app = new App(logger, { list: () => [] } as unknown as Container, plugin);
+    const app = new App(logger, plugin, { list: () => [] } as unknown as Scope);
 
     await assert.rejects(app.stop(), /broken cleanup/);
 
@@ -58,7 +59,7 @@ test('App stops plugins in reverse dependency order and disposes their scopes', 
             },
         });
     }
-    const app = new App({ log: () => {} } as unknown as LoggerService, container, plugin);
+    const app = new App({ log: () => {} } as unknown as LoggerService, plugin, createContainerScope(container));
 
     await app.start();
     await app.stop();

@@ -49,7 +49,7 @@ export class PluginService {
         const dependencies = pluginModule.inject || [];
         let missingDeps = [];
         for (const dep of dependencies) {
-            if (!(this.container.has(dep))) {
+            if (!(this.rootScope.has(dep))) {
                 missingDeps.push(dep);
                 continue;
             }
@@ -81,11 +81,11 @@ export class PluginService {
         const injections: Record<string, any> = {};
         let missingDeps = [];
         for (const dep of dependencies) {
-            if (!(this.container.has(dep))) {
+            if (!(this.rootScope.has(dep))) {
                 missingDeps.push(dep);
                 continue;
             }
-            injections[dep] = this.container.get(dep);
+            injections[dep] = this.rootScope.get(dep);
         }
         if (missingDeps.length > 0) {
             this.logger.log('plugin', 'error', `Cannot apply plugin ${name}: Dependency ${missingDeps.join(', ')} not found`);

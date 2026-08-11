@@ -32,7 +32,12 @@ export function injectionProvider(scope: Scope, container: Container, config: Co
         scope.get<ConfigService>('config')!,
         scope
     ))
-    scope.register('app', App)
+    // App 依赖诊断需要应用根作用域，显式构造传入。
+    scope.register('app', () => new App(
+        scope.get<LoggerService>('logger')!,
+        scope.get<PluginService>('plugin')!,
+        scope
+    ))
 }
 
 export interface PluginDependencyIssue {
@@ -46,11 +51,17 @@ export interface PluginDiagnosisResult {
     issues: PluginDependencyIssue[];
 }
 
-export function pluginDependencyDiagnose(service: PluginService, container: Container): PluginDiagnosisResult {
+/**
+ * 诊断插件依赖并给出启动拓扑序。
+ *
+ * 服务清单以作用域为准（`scope.list()`，含容器后备）：
+ * 依赖名命中作用域登记视为服务依赖，命中已安装插件视为插件依赖，否则记为缺失。
+ */
+export function pluginDependencyDiagnose(service: PluginService, scope: Scope): PluginDiagnosisResult {
     const plugins = service.map();
     const pluginNames = Array.from(plugins.keys());
 
-    const services = container.list();
+    const services = scope.list();
     const issues: PluginDependencyIssue[] = [];
 
     // 第一步：移除依赖缺失的插件（级联移除）
