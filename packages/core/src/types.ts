@@ -1,5 +1,29 @@
+import type { App } from './app';
+import type { ConfigService } from './services/config';
+import type { LoggerService } from './services/logger';
+import type { PluginService } from './services/plugin';
+import type { StorageService } from './services/storage';
+
 export type LogLevel = 'trace' | 'debug' | 'info' | 'notice' | 'warn' | 'error';
 export type LogLevelExtended = LogLevel | 'silent';
+
+export type Constructor<T = any> = {
+    new(...args: any[]): T;
+    inject?: readonly (keyof ServiceRegistry)[];
+};
+
+/**
+ * 服务注册表：服务名到服务类型的映射。
+ * 服务作者通过 `declare module '@saukkojs/core'` 声明扩展本接口，
+ * 使 `Scope.get` / `Context.get` 获得完整的类型推导。
+ */
+export interface ServiceRegistry {
+    logger: LoggerService;
+    config: ConfigService;
+    app: App;
+    plugin: PluginService;
+    storage: StorageService;
+}
 
 export interface PluginConfigRegistry { }
 export interface ServiceConfigRegistry {

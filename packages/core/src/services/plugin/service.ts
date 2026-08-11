@@ -1,5 +1,5 @@
-import { Container, ServiceRegistry } from "../../container";
-import { createContainerScope, Scope } from "../../scope";
+import { ServiceRegistry } from "../../types";
+import { createScope, Scope } from "../../scope";
 // 与 utils 存在模块级循环引用（utils 的 injectionProvider 构造 PluginService）；
 // pluginDependencyDiagnose 是函数声明，模块实例化阶段即完成提升，运行时调用安全。
 import { pluginDependencyDiagnose } from "../../utils";
@@ -54,7 +54,6 @@ export interface PluginMapItem {
 }
 
 export class PluginService {
-    static inject = ['container', 'logger', 'config'] as const;
     private plugins = new Map<string, PluginMapItem>();
     private bots: Array<Bot> = [];
     private sharedEventListeners = new Map<string, EventListener<keyof Events>[]>();
@@ -62,14 +61,13 @@ export class PluginService {
     private readonly replaceWatchers = new Map<string, { count: number; off: () => void }>();
 
     constructor(
-        private container: Container,
         private logger: LoggerService,
         private config: ConfigService,
         rootScope?: Scope
     ) {
-        // 未显式传入时退化为仅衔接容器的空根（兼容旧用法）；
+        // 未显式传入时退化为独立空根（主要用于测试）；
         // 正常路径由 injectionProvider 传入应用根作用域。
-        this.rootScope = rootScope ?? createContainerScope(container);
+        this.rootScope = rootScope ?? createScope();
     }
 
     install(plugin: PluginLike) {

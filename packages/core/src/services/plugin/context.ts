@@ -1,7 +1,7 @@
 import { Bot } from "./bot";
 import { PluginDependenciesRegistry, Events, Event, EventListener } from "./types";
 import { Context, Scope, ScopeServiceFactory } from "../../scope";
-import type { ServiceRegistry } from "../../container";
+import type { ServiceRegistry } from "../../types";
 
 export class PluginContext implements Context {
     private disposed = false;

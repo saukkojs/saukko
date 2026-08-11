@@ -1,5 +1,5 @@
 import { Awaitable, Lifecycle, LifecycleState } from './lifecycle';
-import type { ServiceRegistry } from './container';
+import type { ServiceRegistry } from './types';
 
 /**
  * 服务的生命周期约定（可选实现）。
@@ -80,7 +80,7 @@ export interface Scope {
     onReplace(name: string, listener: (name: string) => Awaitable<void>): () => void;
 
     /**
-     * 惰性注册一个服务（`Container.register` 的 Scope 对应 API）。
+     * 惰性注册一个服务。
      * 首次 `get` 时才实例化并缓存到本作用域；构造函数的 `inject` 依赖沿父链解析；
      * 同作用域内的循环依赖会抛错。惰性实例不做生命周期管理，
      * 需要 `start`/`stop` 约定的服务请使用 `provide`。
@@ -88,7 +88,7 @@ export interface Scope {
      */
     register<T>(name: string, target: ScopeServiceFactory<T>): void;
 
-    /** 列出沿父链可见的全部登记名（`Container.list` 的 Scope 对应 API，含容器后备）。 */
+    /** 列出沿父链可见的全部登记名。 */
     list(): string[];
 
     /**
@@ -363,46 +363,4 @@ export function createScope(parent?: Scope): Scope {
         throw new Error('createScope: parent must be a scope created by createScope().');
     }
     return new ScopeNode(parent);
-}
-
-/**
- * `createContainerScope` 所需的最低容器接口（结构化类型）。
- * stable 的 `Container` 天然满足该接口；定义它是为了让 scope 模块不反向依赖 container。
- */
-export interface ContainerLike {
-    has(name: string): boolean;
-    get(name: string): unknown;
-    list(): string[];
-}
-
-/**
- * 衔接 stable `Container` 的兼容根作用域（0.2 过渡空壳）。
- *
- * `get`/`has` 先查自身登记与父链，未命中时委托给容器；
- * 自身或子作用域的同名登记按常规遮蔽规则覆盖容器值。
- * 容器的惰性实例化与循环检测保持不变；本适配层不做生命周期管理。
- */
-class ContainerScopeNode extends ScopeNode {
-    constructor(private readonly container: ContainerLike) {
-        super(undefined);
-    }
-
-    has(name: string): boolean {
-        return super.has(name) || this.container.has(name);
-    }
-
-    get<T = unknown>(name: string): T | undefined {
-        if (super.has(name)) return super.get<T>(name);
-        if (this.container.has(name)) return this.container.get(name) as T;
-        return undefined;
-    }
-
-    list(): string[] {
-        return [...new Set([...super.list(), ...this.container.list()])];
-    }
-}
-
-/** 创建一个以容器为后备读取来源的根作用域。 */
-export function createContainerScope(container: ContainerLike): Scope {
-    return new ContainerScopeNode(container);
 }
