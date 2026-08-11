@@ -1,5 +1,6 @@
 import { ServiceRegistry } from "../../types";
 import { createScope, Scope } from "../../scope";
+import { LifecycleState } from "../../lifecycle";
 // 与 utils 存在模块级循环引用（utils 的 injectionProvider 构造 PluginService）；
 // pluginDependencyDiagnose 是函数声明，模块实例化阶段即完成提升，运行时调用安全。
 import { pluginDependencyDiagnose } from "../../utils";
@@ -204,7 +205,15 @@ export class PluginService {
                         continue;
                     }
                 }
-                if (plugin.desired && !plugin.enabled) {
+                // 仅对生命周期处于可启动态的插件补启动：
+                // STARTING 中的插件可能正是本次等待迁移的触发方（enable 服务插件时
+                // 其 onStart 经 share 重新登记触发本方法），对其再 start 会自我等待死锁；
+                // 它由外层 apply 在 start 完成后置位 enabled。
+                const startable =
+                    plugin.context!.lifecycle.state === LifecycleState.PENDING ||
+                    plugin.context!.lifecycle.state === LifecycleState.STOPPED ||
+                    plugin.context!.lifecycle.state === LifecycleState.FAILED;
+                if (plugin.desired && !plugin.enabled && startable) {
                     try {
                         await plugin.context!.lifecycle.start();
                         plugin.enabled = true;

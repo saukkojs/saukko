@@ -211,3 +211,43 @@ test('uninstalling a service provider cascades and a later provide recovers the 
 
     await rootScope.dispose();
 });
+
+test('re-enabling a service plugin resumes dependents regardless of install order (no self-await)', async () => {
+    const { rootScope, service } = createSetup();
+    const events: string[] = [];
+
+    // 依赖方先于服务插件安装（挂起）：等待迁移的扫描顺序中依赖方在前、
+    // 处于 STARTING 的服务插件在后——回归覆盖"对自身 startTask 自我等待"的死锁场景。
+    await service.install({
+        name: 'early-consumer',
+        inject: ['svc'],
+        default: (context) => {
+            context.lifecycle.onStart(() => {
+                events.push('start-early-consumer');
+            });
+            context.lifecycle.onStop(() => {
+                events.push('stop-early-consumer');
+            });
+        },
+    });
+    await service.install({
+        name: 'svc-provider',
+        default: async (context) => {
+            await context.share('svc', { v: 1 });
+        },
+    });
+    await service.apply('svc-provider');
+    await service.apply('early-consumer');
+    assert.deepEqual(events, ['start-early-consumer']);
+
+    await service.dispose('svc-provider');
+    assert.deepEqual(events, ['start-early-consumer', 'stop-early-consumer']);
+
+    // 服务插件的 enable 经 share 重登记触发等待迁移：调用可返回且依赖方完成重启。
+    await service.apply('svc-provider');
+    assert.deepEqual(events, ['start-early-consumer', 'stop-early-consumer', 'start-early-consumer']);
+    assert.equal(service.map().get('svc-provider')?.enabled, true);
+    assert.equal(service.map().get('early-consumer')?.enabled, true);
+
+    await rootScope.dispose();
+});
