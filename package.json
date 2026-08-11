@@ -4,6 +4,7 @@
   "scripts": {
     "dev:build": "node scripts/build.mjs",
     "test:core": "tsx --test packages/core/test/**/*.test.ts",
+    "test:saukko": "npm run dev:build && tsx --test packages/saukko/test/**/*.test.ts",
     "dev:version": "node scripts/version.mjs",
     "dev:publish": "node scripts/publish.mjs"
   },
