@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -92,7 +92,7 @@ test('full assembly starts and stops plugins through the real scope tree', async
     // 停止为启动拓扑的逆序：top 先于 base-ext。
     assert.ok(stopped.indexOf('stop-top') < stopped.indexOf('stop-base-ext'));
     for (const [name, context] of contexts) {
-        assert.equal(context.scope.lifecycle.state, LifecycleState.STOPPED, name);
+        assert.equal(context.scope.lifecycle.state, LifecycleState.DISPOSED, name);
     }
 
     await rootScope.dispose();

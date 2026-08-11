@@ -327,7 +327,7 @@ class ScopeNode implements Scope {
             }
         }
         try {
-            await this.lifecycle.stop();
+            await this.lifecycle.dispose();
         } catch (error) {
             errors.push(error);
         }

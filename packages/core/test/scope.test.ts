@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LifecycleState } from '../src/lifecycle';
 import { createScope } from '../src/scope';
@@ -45,9 +45,9 @@ test('disposing a scope disposes children in reverse creation order before its o
     await root.dispose();
 
     assert.deepEqual(order, ['second', 'first', 'root']);
-    assert.equal(first.lifecycle.state, LifecycleState.STOPPED);
-    assert.equal(second.lifecycle.state, LifecycleState.STOPPED);
-    assert.equal(root.lifecycle.state, LifecycleState.STOPPED);
+    assert.equal(first.lifecycle.state, LifecycleState.DISPOSED);
+    assert.equal(second.lifecycle.state, LifecycleState.DISPOSED);
+    assert.equal(root.lifecycle.state, LifecycleState.DISPOSED);
 });
 
 test('dispose is idempotent and concurrent calls share the same task', async () => {

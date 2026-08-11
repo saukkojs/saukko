@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import test from 'node:test';
 import { App } from '../src/app';
 import { LifecycleState } from '../src/lifecycle';
@@ -61,6 +61,6 @@ test('App stops plugins in reverse dependency order and disposes their scopes', 
 
     assert.deepEqual(stopped, ['top', 'mid', 'base']);
     for (const context of contexts.values()) {
-        assert.equal(context.scope.lifecycle.state, LifecycleState.STOPPED);
+        assert.equal(context.scope.lifecycle.state, LifecycleState.DISPOSED);
     }
 });

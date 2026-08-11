@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LifecycleState } from '../src/lifecycle';
 import { createScope } from '../src/scope';
@@ -42,7 +42,7 @@ test('re-providing a service restarts dependent plugins with the new instance', 
     // 旧 Context 已随子作用域销毁，插件以新服务实例重新启用。
     assert.deepEqual(stopped, ['consumer']);
     assert.deepEqual(seen, [{ version: 1 }, { version: 2 }]);
-    assert.equal(contexts[0].scope.lifecycle.state, LifecycleState.STOPPED);
+    assert.equal(contexts[0].scope.lifecycle.state, LifecycleState.DISPOSED);
     assert.equal(contexts[1].scope.lifecycle.state, LifecycleState.ACTIVE);
     assert.equal(service.map().get('consumer')?.enabled, true);
 

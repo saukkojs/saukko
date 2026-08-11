@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LifecycleState } from '../src/lifecycle';
 import { createScope } from '../src/scope';
@@ -162,7 +162,7 @@ test('plugin scope registrations belong to the plugin scope and are released wit
     assert.equal(bystander.has('custom'), false);
 
     await service.dispose('owner');
-    assert.equal(owner.scope.lifecycle.state, LifecycleState.STOPPED);
+    assert.equal(owner.scope.lifecycle.state, LifecycleState.DISPOSED);
     assert.throws(() => owner.set('late', 1), /disposed/);
     // 兄弟插件的作用域不受波及。
     assert.equal(bystander.scope.lifecycle.state, LifecycleState.ACTIVE);

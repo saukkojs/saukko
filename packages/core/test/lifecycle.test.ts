@@ -142,7 +142,7 @@ test('PluginContext removes its business event listeners during disposal', async
     sibling.emit('test.event', { name: 'test.event', data: { value: 'second' } });
 
     assert.deepEqual(calls, ['event']);
-    assert.equal(context.lifecycle.state, LifecycleState.STOPPED);
+    assert.equal(context.lifecycle.state, LifecycleState.DISPOSED);
 });
 
 test('PluginContext dispatches business events synchronously', () => {
@@ -156,4 +156,70 @@ test('PluginContext dispatches business events synchronously', () => {
     const result = context.emit('test.event', { name: 'test.event', data: { value: 'test' } });
     assert.deepEqual(calls, ['event']);
     assert.equal(result, undefined);
+});
+
+test('hooks persist across stop and the lifecycle can be restarted', async () => {
+    const lifecycle = new Lifecycle();
+    const calls: string[] = [];
+
+    lifecycle.onStart(() => {
+        calls.push('start');
+    });
+    lifecycle.onStop(() => {
+        calls.push('stop');
+    });
+
+    await lifecycle.start();
+    await lifecycle.stop();
+    assert.equal(lifecycle.state, LifecycleState.STOPPED);
+
+    await lifecycle.start();
+    assert.equal(lifecycle.state, LifecycleState.ACTIVE);
+    await lifecycle.stop();
+
+    assert.deepEqual(calls, ['start', 'stop', 'start', 'stop']);
+});
+
+test('cleanups returned by onStart run once per start cycle', async () => {
+    const lifecycle = new Lifecycle();
+    const calls: string[] = [];
+    let cycle = 0;
+
+    lifecycle.onStart(() => {
+        cycle += 1;
+        const current = cycle;
+        calls.push(`start-${current}`);
+        return () => {
+            calls.push(`cleanup-${current}`);
+        };
+    });
+
+    await lifecycle.start();
+    await lifecycle.stop();
+    await lifecycle.start();
+    await lifecycle.stop();
+
+    // 上一周期的清理不重复执行。
+    assert.deepEqual(calls, ['start-1', 'cleanup-1', 'start-2', 'cleanup-2']);
+});
+
+test('dispose is terminal and rejects further operations', async () => {
+    const lifecycle = new Lifecycle();
+    const calls: string[] = [];
+    lifecycle.onStop(() => {
+        calls.push('stop');
+    });
+
+    await lifecycle.start();
+    await lifecycle.dispose();
+    assert.equal(lifecycle.state, LifecycleState.DISPOSED);
+    assert.deepEqual(calls, ['stop']);
+
+    assert.throws(() => lifecycle.start(), /disposed/);
+    assert.throws(() => lifecycle.onStart(() => {}), /disposed/);
+    assert.throws(() => lifecycle.onStop(() => {}), /disposed/);
+    // 幂等：重复 dispose 共享同一任务，清理不重复执行。
+    await lifecycle.dispose();
+    await lifecycle.stop();
+    assert.deepEqual(calls, ['stop']);
 });
